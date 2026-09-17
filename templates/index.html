@@ -1320,28 +1320,35 @@
                 padding: 0 16px 24px;                   /* 顶部留白由 toolbar 的 safe-area padding 承担 */
             }
             .card { padding: 16px; }
-            /* 移动端：海报从状态栏安全区开始铺满首屏顶部 */
+            /* 移动端：订阅海报改为顶栏下方、竖向 2:3 纯海报；出血方式与之前一致（全宽出血铺满、无圆角、cover 裁切） */
             #tab-system .tmdb-entry-card.card {
-                padding: 0;
-                margin-left: -16px;
+                margin-left: -16px;                /* 保留横向出血：海报延伸到屏幕左右边缘 */
                 margin-right: -16px;
+                margin-top: calc(-1 * (58px + env(safe-area-inset-top)));   /* 顶部出血同以前：海报上拉沉浸到工具栏/状态栏之后 */
+                padding: 0;
                 border-radius: 0;
-                margin-top: calc(-1 * (58px + env(safe-area-inset-top)));
-                padding-top: calc(58px + env(safe-area-inset-top));
-                min-height: calc(498px + env(safe-area-inset-top));
+                background: transparent;
+                box-shadow: none;
+                min-height: 0;
+            }
+            #tab-system .tmdb-entry-poster {
+                position: relative;                /* .entry-card absolute 的锚点 */
+                width: 100%;
+                aspect-ratio: 2 / 3;               /* 竖向纯海报 */
+                min-height: 0;
+                padding: 0;
+                border-radius: 0;                  /* 与之前一致：全宽出血无圆角 */
                 background: transparent;
                 box-shadow: none;
             }
-            #tab-system .tmdb-entry-poster {
-                min-height: 440px;
-                border-radius: 0;
-                background: transparent;
+            #tab-system .entry-carousel { width: 100%; height: 100%; min-height: 0; }
+            /* 纯海报：去掉竖向向下淡出遮罩（保留底部影视名称徽标） */
+            #tab-system .entry-card > img:not(.entry-brand) {
+                -webkit-mask-image: none;
+                mask-image: none;
             }
-            #tab-system .entry-carousel { min-height: 440px; }
-            /* 沉浸式延伸：徽标随海报下拉补偿等量高度（视觉位置不变），搜索框上浮至海报淡出处 */
-            #tab-system .entry-card > img.entry-brand { bottom: 46px; }
             #tab-system .cards-row > .hero-search {
-                margin-top: -36px;
+                margin-top: 18px;
                 position: relative;
                 z-index: 6;
             }
@@ -3210,7 +3217,11 @@
                 const img = document.createElement('img');
                 img.loading = 'lazy';
                 img.alt = '';
-                img.src = `https://image.tmdb.org/t/p/original${it.backdrop_path || it.poster_path}`;
+                // 手机端用竖幅海报（2:3 纯海报），桌面端仍用原横向 hero 图
+                const vertical = window.innerWidth <= 768;
+                img.src = vertical
+                    ? `https://image.tmdb.org/t/p/w780${it.poster_path || it.backdrop_path}`
+                    : `https://image.tmdb.org/t/p/original${it.backdrop_path || it.poster_path}`;
                 c.appendChild(img);
                 const brand = document.createElement('img');
                 brand.className = 'entry-brand';
@@ -3218,7 +3229,7 @@
                 brand.loading = 'lazy';
                 brand.hidden = true;
                 c.appendChild(brand);
-                _loadEntryLogo(it, brand);
+                _loadEntryDetail(it, brand, img);   // 复用一次详情请求：设影视徽标 + 手机端无文字海报
                 return c;
             }));
             _entryPosterIdx = 0;
@@ -3226,19 +3237,23 @@
             _bindEntrySwipe(strip);   // 手势只绑一次
             _restartEntryPoster();
         }
-        // 徽标路径按条目缓存：轮播每次重建（搜索框过滤、切作用域）都要重铺一次 <img>，
+        // 徽标/无文字海报路径按条目缓存：轮播每次重建（搜索框过滤、切作用域）都要重铺一次 <img>，
         // 不缓存就每敲一个字符重拉 10 次详情接口。缓存 Promise 而非结果，连打时也不会重复请求。
-        function _loadEntryLogo(item, target) {
-            if (!item || !item.id || !target) return;
+        function _loadEntryDetail(item, brand, posterImg) {
+            if (!item || !item.id || !brand) return;
             if (!item._logoReq) {
                 item._logoReq = api(`/api/tmdb/detail?id=${encodeURIComponent(item.id)}&type=${encodeURIComponent(item.media_type || 'movie')}`)
-                    .then(d => (d && d.detail && d.detail.logo_path) || '')
-                    .catch(() => { item._logoReq = null; return ''; });   // 失败不落缓存，下次重建再试
+                    .then(d => (d && d.detail && { logo: d.detail.logo_path || '', textless: d.detail.textless_poster_path || '' }) || { logo: '', textless: '' })
+                    .catch(() => { item._logoReq = null; return { logo: '', textless: '' }; });   // 失败不落缓存，下次重建再试
             }
-            item._logoReq.then(logo => {
-                if (logo && target.isConnected) {
-                    target.src = `https://image.tmdb.org/t/p/w500${logo}`;
-                    target.hidden = false;
+            item._logoReq.then(r => {
+                if (r.logo && brand.isConnected) {
+                    brand.src = `https://image.tmdb.org/t/p/w500${r.logo}`;
+                    brand.hidden = false;
+                }
+                // 手机端竖幅海报改用无文字版（TMDB /images?include_image_language=null，选票数最高）
+                if (r.textless && posterImg && posterImg.isConnected && window.innerWidth <= 768) {
+                    posterImg.src = `https://image.tmdb.org/t/p/w780${r.textless}`;
                 }
             });
         }

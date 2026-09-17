@@ -44,6 +44,7 @@ type TmdbDetail struct {
 	PosterPath          string           `json:"poster_path"`
 	BackdropPath        string           `json:"backdrop_path"`
 	LogoPath            string           `json:"logo_path"`
+	TextlessPosterPath  string           `json:"textless_poster_path"`
 	VoteAverage         float64          `json:"vote_average"`
 	VoteCount           int              `json:"vote_count"`
 	ReleaseDate         string           `json:"release_date"`
@@ -317,6 +318,7 @@ func (t *TmdbClient) GetDetailDict(tmdbID int, mediaType string) *TmdbDetail {
 		PosterPath:       raw.PosterPath,
 		BackdropPath:     raw.BackdropPath,
 		LogoPath:         selectTmdbLogo(raw.Images.Logos),
+		TextlessPosterPath: t.GetTextlessPoster(tmdbID, mediaType),
 		VoteAverage:      raw.VoteAverage,
 		VoteCount:        raw.VoteCount,
 		ReleaseDate:      date,
@@ -360,6 +362,41 @@ func (t *TmdbClient) GetDetailDict(tmdbID int, mediaType string) *TmdbDetail {
 // GetJSON 请求 TMDB 接口并返回完整 JSON（供日历/进度等接口使用）。
 func (t *TmdbClient) GetJSON(path string, params map[string]string) ([]byte, error) {
 	return t.getJSON(context.Background(), path, params)
+}
+
+// GetTextlessPoster 获取该影视的无文字竖向海报路径。
+// 走独立 /images 端点（append_to_response=images 不支持 include_image_language=null），
+// 只取 iso_639_1 为空（无文字）的海报，再从其中选 vote_count 最高的一张；无则返回空。
+func (t *TmdbClient) GetTextlessPoster(tmdbID int, mtype string) string {
+	if mtype != "tv" {
+		mtype = "movie"
+	}
+	data, err := t.getJSON(context.Background(), fmt.Sprintf("/%s/%d/images", mtype, tmdbID),
+		map[string]string{"include_image_language": "null"})
+	if err != nil {
+		return ""
+	}
+	var r struct {
+		Posters []struct {
+			FilePath  string `json:"file_path"`
+			ISO6391   string `json:"iso_639_1"`
+			VoteCount int    `json:"vote_count"`
+		} `json:"posters"`
+	}
+	if json.Unmarshal(data, &r) != nil {
+		return ""
+	}
+	best := ""
+	bestVotes := -1
+	for _, p := range r.Posters {
+		if p.FilePath == "" || p.ISO6391 != "" {
+			continue
+		}
+		if p.VoteCount > bestVotes {
+			best, bestVotes = p.FilePath, p.VoteCount
+		}
+	}
+	return best
 }
 
 // fetchTitleZh 获取简体中文译名（优先中国大陆 CN）。
