@@ -204,6 +204,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// 后台任务 / Emby 观看统计
 	mux.HandleFunc("GET /api/tasks/status", s.authWrap(s.handleTasksStatus))
 	mux.HandleFunc("POST /api/monitor/trigger", s.authWrap(s.handleMonitorTrigger))
+	mux.HandleFunc("GET /api/monitor/recent", s.authWrap(s.handleChannelRecent))
+	mux.HandleFunc("POST /api/monitor/transfer", s.authWrap(s.handleChannelTransfer))
 	mux.HandleFunc("GET /api/emby/usage", s.authWrap(s.handleEmbyUsage))
 	mux.HandleFunc("GET /api/emby/usage/detail", s.authWrap(s.handleEmbyUsageDetail))
 }

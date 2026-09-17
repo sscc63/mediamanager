@@ -11,12 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/net/html"
 
 	"mmbot/internal/httpx"
+	"mmbot/internal/transfer"
 	_ "modernc.org/sqlite"
 )
 
@@ -37,6 +39,16 @@ type MessageDB struct {
 }
 
 var reExcludePwd = regexp.MustCompile(`(?i)提取码\s*[:：]\s*(\w+)`)
+
+// reChannelMeta 匹配电报频道消息中的「片名（年份）」，兼容中英文括号（如 黑客帝国（1999） / 黑客帝国 (1999)）。
+var reChannelMeta = regexp.MustCompile(`[（(]\s*(\d{4})\s*[)）]`)
+
+// 以下正则为干净提取 bot 型频道「🎬 片名 (年份) 已更新 + 🎭 类型：X剧」的结构化消息。
+var reLink = regexp.MustCompile(`https?://\S+`)
+var reEmoji = regexp.MustCompile(`[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0F}\x{3000}]`)
+var reBracketContent = regexp.MustCompile(`[（(【\[][^）)】\]\n]*[）)】\]]`)
+var reTailWord = regexp.MustCompile(`(已更新|更新|连载|更新至|HDTV|高清|第\d+[季集]|全集)$`)
+var reChannelType = regexp.MustCompile(`类型[:：]\s*([^，,\n]+)`)
 
 // NewMessageDB 打开/创建消息记录数据库。
 func NewMessageDB(dbPath string) *MessageDB {
@@ -62,8 +74,42 @@ func NewMessageDB(dbPath string) *MessageDB {
 		target_url TEXT,
 		transfer_status TEXT,
 		transfer_time TEXT,
-		transfer_result TEXT)`)
+		transfer_result TEXT,
+		media_title TEXT,
+		media_year TEXT,
+		media_type TEXT,
+		recognized_at TEXT)`)
+	// 兼容旧库：补齐标题相关列
+	m.ensureColumn("media_title", "TEXT")
+	m.ensureColumn("media_year", "TEXT")
+	m.ensureColumn("media_type", "TEXT")
+	m.ensureColumn("recognized_at", "TEXT")
 	return m
+}
+
+// ensureColumn 若列不存在则补齐（兼容已存在的 TG_monitor-123.db）。
+func (m *MessageDB) ensureColumn(col, ddl string) {
+	if m == nil || m.db == nil {
+		return
+	}
+	rows, err := m.db.Query("PRAGMA table_info(messages)")
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &pk, &dflt); err != nil {
+			continue
+		}
+		if name == col {
+			return
+		}
+	}
+	_, _ = m.db.Exec(fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", col, ddl))
 }
 
 // IsProcessed 检查消息是否已处理（无论转存是否成功）。
@@ -77,18 +123,60 @@ func (m *MessageDB) IsProcessed(messageURL string) bool {
 }
 
 // Save 记录/更新消息处理结果。
-func (m *MessageDB) Save(messageID, date, messageURL, targetURL, status, result string) {
+func (m *MessageDB) Save(messageID, date, messageURL, targetURL, title, year, mtype, status, result string) {
 	if m == nil || m.db == nil || messageURL == "" {
 		return
 	}
 	now := time.Now().Format("2006-01-02T15:04:05")
 	// 与 Python 原版一致：纯 INSERT（id 非唯一约束，去重由调用方 IsProcessed 按 message_url 判断）
-	_, err := m.db.Exec(`INSERT INTO messages (id, date, message_url, target_url, transfer_status, transfer_time, transfer_result)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		messageID, date, messageURL, targetURL, status, now, result)
+	_, err := m.db.Exec(`INSERT INTO messages (id, date, message_url, target_url, transfer_status, transfer_time, transfer_result, media_title, media_year, media_type, recognized_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		messageID, date, messageURL, targetURL, status, now, result, title, year, mtype, now)
 	if err != nil {
 		log.Printf("[监控] 保存消息记录失败: %v", err)
 	}
+}
+
+// ChannelRecent 频道近期更新影视（一条消息一行，含识别标题）。
+type ChannelRecent struct {
+	Title        string
+	Year         string
+	Type         string
+	MessageURL   string
+	TransferTime string
+	TargetURL    string
+}
+
+// ListRecentWithTitle 查询近 hours 小时内、已识别出标题的频道消息（按时间倒序）。
+// 用于首页/订阅探索页展示「频道更新」片单。
+func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
+	if m == nil || m.db == nil || m.db == nil {
+		return nil
+	}
+	if hours <= 0 {
+		hours = 3
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	since := time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15:04:05")
+	rows, err := m.db.Query(`SELECT media_title, COALESCE(media_year,''), COALESCE(media_type,''), message_url, transfer_time, target_url
+		FROM messages WHERE media_title <> '' AND recognized_at >= ?
+		ORDER BY transfer_time DESC LIMIT ?`, since, limit)
+	if err != nil {
+		log.Printf("[监控] ListRecentWithTitle 查询失败: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	var out []ChannelRecent
+	for rows.Next() {
+		var c ChannelRecent
+		if err := rows.Scan(&c.Title, &c.Year, &c.Type, &c.MessageURL, &c.TransferTime, &c.TargetURL); err != nil {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // Cleanup 清理 retention 天前的历史记录（对应 cleanup_db）。
@@ -408,8 +496,99 @@ func (b *Bot) saveShareLinkLink(link string, targetPID int) bool {
 
 // recordChannelResult 记录频道消息处理结果。
 func (b *Bot) recordChannelResult(cm ChannelMessage, msgDB *MessageDB, status, result string) {
-	msgDB.Save(cm.MessageID, cm.DateStr, cm.MessageURL, cm.TargetURL, status, result)
-	log.Printf("[监控] 已记录: %s | %s | 状态: %s", cm.MessageID, cm.TargetURL, status)
+	title, year, mtype := recognizeChannelTitle(cm.MessageText)
+	msgDB.Save(cm.MessageID, cm.DateStr, cm.MessageURL, cm.TargetURL, title, year, mtype, status, result)
+	log.Printf("[监控] 已记录: %s | %s | 状态: %s | 标题: %s", cm.MessageID, cm.TargetURL, status, title)
+}
+
+// recognizeChannelTitle 从频道消息文本提取影视标题、年份、类型。
+// 优先处理 bot 型结构化消息「🎬 片名 (年份) 已更新 + 🎭 类型：X剧」，失败时退化用 transfer.Recognize 识别文件名式命名。
+func recognizeChannelTitle(text string) (title, year, mtype string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	mtype = channelTypeFromText(text) // 优先用消息自带的「类型：X剧/X电影」字段
+	idx := reChannelMeta.FindStringSubmatchIndex(text)
+	if idx != nil {
+		year = text[idx[2]:idx[3]]
+		pre := text[:idx[0]]
+		title = channelCleanHead(channelLastLine(pre))
+		if title == "" {
+			title = channelCleanHead(pre)
+		}
+		if title != "" {
+			return
+		}
+	}
+	meta := transfer.Recognize(text, "", nil)
+	title = strings.TrimSpace(meta.Name)
+	if title == "" {
+		return
+	}
+	if meta.Year > 0 {
+		year = strconv.Itoa(meta.Year)
+	}
+	if mtype == "" {
+		switch {
+		case meta.Type != "":
+			mtype = meta.Type
+		case meta.Season > 0 || meta.Episode > 0:
+			mtype = "tv"
+		default:
+			mtype = "movie"
+		}
+	}
+	return
+}
+
+// channelTypeFromText 从 bot 消息「🎭 类型：国产剧/欧美剧/日韩剧/电影」判定 media_type。
+func channelTypeFromText(text string) string {
+	m := reChannelType.FindStringSubmatch(text)
+	if len(m) == 2 {
+		if strings.Contains(m[1], "剧") {
+			return "tv"
+		}
+		if strings.Contains(m[1], "电影") {
+			return "movie"
+		}
+	}
+	return ""
+}
+
+// channelLastLine 取文本最后一个非空行（通常即「🎬 片名 已更新」所在行）。
+func channelLastLine(pre string) string {
+	pre = strings.ReplaceAll(pre, "\r", "")
+	lines := strings.Split(pre, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			return lines[i]
+		}
+	}
+	return ""
+}
+
+// channelCleanHead 清洗片名候选：去 emoji/链接/括号内容/「已更新」等尾词与首尾符号。
+func channelCleanHead(s string) string {
+	s = reEmoji.ReplaceAllString(s, " ")
+	s = reLink.ReplaceAllString(s, " ")
+	s = strings.ReplaceAll(s, "\u200b", "")
+	s = strings.ReplaceAll(s, "\u00a0", " ")
+	s = reBracketContent.ReplaceAllString(s, " ")
+	s = reTailWord.ReplaceAllString(s, "")
+	s = strings.Join(strings.Fields(s), " ")
+	return strings.Trim(s, " ·:：,，。、-—_&/")
+}
+
+// RestoreTransferLink 将「频道更新」里的某条 123 分享链接立即转存入库。
+// 供 /api/monitor/transfer 调用（长按菜单「入库」）。转存成功/失败自带 TG 通知与去重跳过。
+func (b *Bot) RestoreTransferLink(url string) bool {
+	pid := b.env.GetInt("ENV_123_LINK_UPLOAD_PID", 0)
+	if !b.transferSharedLinkOptimize(url, pid) {
+		return false
+	}
+	b.triggerTransferAfterSave(pid)
+	return true
 }
 
 func htmlEscape(s string) string {
