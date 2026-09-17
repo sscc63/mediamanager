@@ -48,7 +48,7 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 			"target_url":    c.TargetURL,
 		}
 		if client != nil {
-			if hit := channelSearchFirst(client, c.Title, c.Type); hit != nil {
+			if hit := channelSearchFirst(client, c.Title, c.Year, c.Type); hit != nil {
 				item["tmdb_id"] = hit.ID
 				item["poster_path"] = hit.PosterPath
 				if item["media_type"] == "" {
@@ -98,8 +98,19 @@ func normTitle(s string) string {
 	return strings.Join(fields, "")
 }
 
-// channelSearchFirst 用标题搜索 TMDB，返回第一条带海报的结果；类型不确定时先 movie 后 tv。
-func channelSearchFirst(client *transfer.TmdbClient, title, mtype string) *transfer.TmdbListItem {
+// channelAlias 频道社区译名 → TMDB 可命中名称。
+// 部分剧 TMDB 简体中文没有对应译名（如「流人」在 zh-CN 无中文名，官方为 Slow Horses），
+// 直接搜中文会错配到含同字的无关作品，需人工映射后按其原名搜索。
+var channelAlias = map[string]string{
+	"流人": "Slow Horses",
+}
+
+// channelSearchFirst 用标题搜索 TMDB，type 确定则只搜该类型，否则 movie/tv 都搜。
+// 优先「标题严格按影视名精确匹配」，其次「发布日期年份与识别年份一致」，二者皆不命中则返回空（不回退错配）。
+func channelSearchFirst(client *transfer.TmdbClient, title, year, mtype string) *transfer.TmdbListItem {
+	if a, ok := channelAlias[normTitle(title)]; ok && a != "" {
+		title = a
+	}
 	order := []string{"tv"}
 	if mtype == "tv" {
 		order = []string{"tv"}
@@ -108,22 +119,36 @@ func channelSearchFirst(client *transfer.TmdbClient, title, mtype string) *trans
 	} else {
 		order = []string{"movie", "tv"}
 	}
+	// 汇总所有类型的候选，做一次统一的年份优先、再带海报回退
+	var all []transfer.TmdbListItem
 	for _, t := range order {
 		key := "channel:" + title + ":" + t
-		var items []transfer.TmdbListItem
 		if v, ok := listCache.get(key); ok {
-			items, _ = v.([]transfer.TmdbListItem)
-		} else {
-			items = client.SearchMedia(title, t)
-			if len(items) > 0 {
-				listCache.set(key, items)
+			if items, ok := v.([]transfer.TmdbListItem); ok {
+				all = append(all, items...)
+				continue
 			}
 		}
-		for i := range items {
-			if items[i].PosterPath != "" {
-				return &items[i]
+		items := client.SearchMedia(title, t, 20)
+		if len(items) > 0 {
+			listCache.set(key, items)
+			all = append(all, items...)
+		}
+	}
+	// 优先①：标题严格按影视名匹配（忽略大小写与标点空白），且带海报 —— 严格按影视名
+	for i := range all {
+		if all[i].PosterPath != "" && normTitle(all[i].Title) == normTitle(title) {
+			return &all[i]
+		}
+	}
+	// 优先②：发布日期年份与识别年份一致且带海报（频道年份多为更新当季，仅作次级）
+	if year != "" {
+		for i := range all {
+			if all[i].PosterPath != "" && strings.HasPrefix(all[i].ReleaseDate, year) {
+				return &all[i]
 			}
 		}
 	}
+	// 严格按影视名/年份都匹配不到：返回空占位，绝不回退到无关的同名/含字作品（避免错图）
 	return nil
 }
