@@ -25,6 +25,10 @@ const (
 	maoyanListSize = 9
 	// 猫眼对空 UA 会拒绝；固定一个桌面 Chrome UA 即可，不需要随机列表
 	maoyanUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+	// maoyanMatchConcurrency 匹配 TMDB 的并发度。9 部片每部一次搜索，串行就是 9 个上游往返，
+	// 首屏冷启动要干等好几秒；并发 6 路把总等待压到 2 个往返。不再调高是因为 TMDB 有速率限制，
+	// 而任务总数本来就只有 9 个，6 路已经够铺满。
+	maoyanMatchConcurrency = 6
 )
 
 // maoyanHTTP 猫眼抓取共享客户端，与频道监控同规格（15s 超时 + 连接复用）。
@@ -151,7 +155,7 @@ func maoyanNormalize(s string) string {
 // TMDB 只贡献 id（详情页）、海报、评分、年份。匹配不到时退回仅有标题的条目，仍可订阅。
 func maoyanMatch(client *transfer.TmdbClient, name, mediaType string) transfer.TmdbListItem {
 	item := transfer.TmdbListItem{Title: name, MediaType: mediaType}
-	results := client.SearchMedia(name, mediaType)
+	results := client.SearchMedia(name, mediaType, 20)
 	if len(results) == 0 {
 		log.Printf("[猫眼] 未能为 '%s' 匹配到 TMDB 条目，保留原标题", name)
 		return item
@@ -234,11 +238,22 @@ func (s *Server) handleMaoyanRank(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 猫眼的 view 取值（tv/movie）与 TMDB 的 media_type 同名，直接传
-	items := make([]transfer.TmdbListItem, 0, len(names))
-	for _, n := range names {
-		items = append(items, maoyanMatch(client, n, view))
+	// 猫眼的 view 取值（tv/movie）与 TMDB 的 media_type 同名，直接传。
+	// 固定并发池 + 按下标回填，顺序仍与猫眼榜单一致；maoyanMu 已经保证同时只有一个榜单在抓，
+	// 所以这里并发只是同一请求内部的并发，不会放大上游压力。
+	items := make([]transfer.TmdbListItem, len(names))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maoyanMatchConcurrency)
+	for i, n := range names {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(i int, n string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			items[i] = maoyanMatch(client, n, view)
+		}(i, n)
 	}
+	wg.Wait()
 	maoyanCache.set(view, items)
 	log.Printf("[猫眼] %s 榜单已获取并缓存 %d 条", view, len(items))
 	maoyanOK(items)

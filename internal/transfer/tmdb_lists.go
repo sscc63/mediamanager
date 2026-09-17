@@ -35,9 +35,9 @@ type TmdbCastMember struct {
 
 // TmdbDetail TMDB 完整详情（含演职员/中文译名），供前端弹窗展示。
 type TmdbDetail struct {
-	ID            int              `json:"id"`
-	Title         string           `json:"title"`
-	OriginalTitle string           `json:"original_title"`
+	ID                  int              `json:"id"`
+	Title               string           `json:"title"`
+	OriginalTitle       string           `json:"original_title"`
 	MediaType           string           `json:"media_type"`
 	Overview            string           `json:"overview"`
 	PosterPath          string           `json:"poster_path"`
@@ -118,17 +118,25 @@ type tmdbDetailRaw struct {
 		} `json:"crew"`
 	} `json:"credits"`
 	Images struct {
-		Logos []struct {
-			FilePath string `json:"file_path"`
-			ISO6391  string `json:"iso_639_1"`
-		} `json:"logos"`
+		Logos   []tmdbLogo   `json:"logos"`
+		Posters []tmdbPoster `json:"posters"`
 	} `json:"images"`
 }
 
-func selectTmdbLogo(logos []struct {
+// tmdbLogo 图片接口里的徽标项。
+type tmdbLogo struct {
 	FilePath string `json:"file_path"`
 	ISO6391  string `json:"iso_639_1"`
-}) string {
+}
+
+// tmdbPoster 图片接口里的海报项（只声明挑选无文字海报需要的字段）。
+type tmdbPoster struct {
+	FilePath  string `json:"file_path"`
+	ISO6391   string `json:"iso_639_1"`
+	VoteCount int    `json:"vote_count"`
+}
+
+func selectTmdbLogo(logos []tmdbLogo) string {
 	for _, language := range []string{"zh", "en", ""} {
 		for _, logo := range logos {
 			if logo.FilePath != "" && logo.ISO6391 == language {
@@ -137,6 +145,21 @@ func selectTmdbLogo(logos []struct {
 		}
 	}
 	return ""
+}
+
+// selectTextlessPoster 从海报列表里挑无文字（iso_639_1 为空）且 vote_count 最高的一张，无则返回空。
+func selectTextlessPoster(posters []tmdbPoster) string {
+	best := ""
+	bestVotes := -1
+	for _, p := range posters {
+		if p.FilePath == "" || p.ISO6391 != "" {
+			continue
+		}
+		if p.VoteCount > bestVotes {
+			best, bestVotes = p.FilePath, p.VoteCount
+		}
+	}
+	return best
 }
 
 // GetTrending 获取 TMDB 趋势榜单（最多 30 条）。
@@ -257,15 +280,20 @@ func (t *TmdbClient) GetUpcoming(mediaType string) []TmdbListItem {
 	return normalizeTmdbList(items, "movie")
 }
 
-// SearchMedia 搜索电影/电视剧（最多 30 条）。
-func (t *TmdbClient) SearchMedia(query, mediaType string) []TmdbListItem {
+// SearchMedia 搜索电影/电视剧，最多 limit 条。
+// limit ≤ 20 时只打一页上游（TMDB 每页 20 条）：榜单页要铺满网格给 30，
+// 猫眼匹配、频道补海报只用得到头几条，给 20 能省掉一半请求。
+func (t *TmdbClient) SearchMedia(query, mediaType string, limit int) []TmdbListItem {
 	if mediaType != "tv" {
 		mediaType = "movie"
 	}
 	if strings.TrimSpace(query) == "" {
 		return nil
 	}
-	items := t.getListMultiPage("/search/"+mediaType, 30, map[string]string{"query": strings.TrimSpace(query)})
+	if limit <= 0 {
+		limit = 20
+	}
+	items := t.getListMultiPage("/search/"+mediaType, limit, map[string]string{"query": strings.TrimSpace(query), "language": "zh-CN"})
 	return normalizeTmdbList(items, mediaType)
 }
 
@@ -278,7 +306,7 @@ func (t *TmdbClient) GetDetailDict(tmdbID int, mediaType string) *TmdbDetail {
 	data, err := t.getJSON(context.Background(), fmt.Sprintf("/%s/%d", mediaType, tmdbID), map[string]string{
 		"append_to_response":     "credits,images",
 		"include_image_language": "zh,en,null",
-		"language":               "zh-CN",   // 中文：genres/overview/title 均返回简体中文，避免类型中英混杂
+		"language":               "zh-CN", // 中文：genres/overview/title 均返回简体中文，避免类型中英混杂
 	})
 	if err != nil {
 		log.Printf("TMDB 详情请求失败 (id=%d, type=%s): %v", tmdbID, mediaType, err)
@@ -318,7 +346,6 @@ func (t *TmdbClient) GetDetailDict(tmdbID int, mediaType string) *TmdbDetail {
 		PosterPath:       raw.PosterPath,
 		BackdropPath:     raw.BackdropPath,
 		LogoPath:         selectTmdbLogo(raw.Images.Logos),
-		TextlessPosterPath: t.GetTextlessPoster(tmdbID, mediaType),
 		VoteAverage:      raw.VoteAverage,
 		VoteCount:        raw.VoteCount,
 		ReleaseDate:      date,
@@ -355,6 +382,10 @@ func (t *TmdbClient) GetDetailDict(tmdbID int, mediaType string) *TmdbDetail {
 	for _, c := range raw.Credits.Cast[:min(8, len(raw.Credits.Cast))] {
 		d.Cast = append(d.Cast, TmdbCastMember{Name: c.Name, Character: c.Character, ProfilePath: c.ProfilePath})
 	}
+	// 无文字海报先看这次响应已带回的 images.posters：主请求就带了 include_image_language=zh,en,null，
+	// TMDB 照此过滤时这里直接就有，等于白拿。挑不到时这里不补——要不要为它多发一次 /images
+	// 交给调用方决定（见 handleTMDBDetail 的 textless=1），桌面端根本用不到这张图。
+	d.TextlessPosterPath = selectTextlessPoster(raw.Images.Posters)
 	return d
 }
 
@@ -363,9 +394,10 @@ func (t *TmdbClient) GetJSON(path string, params map[string]string) ([]byte, err
 	return t.getJSON(context.Background(), path, params)
 }
 
-// GetTextlessPoster 获取该影视的无文字竖向海报路径。
-// 走独立 /images 端点（append_to_response=images 不支持 include_image_language=null），
-// 只取 iso_639_1 为空（无文字）的海报，再从其中选 vote_count 最高的一张；无则返回空。
+// GetTextlessPoster 获取该影视的无文字竖向海报路径，走独立 /images 端点。
+// 兜底路径：GetDetailDict 能从 images.posters 直接挑出无文字海报时，调用方不会走到这里；
+// 只有 TMDB 没按 include_image_language 过滤出 null 语言海报时才需要它。
+// 请求只带 include_image_language=null，再从中选 vote_count 最高的一张；无则返回空。
 func (t *TmdbClient) GetTextlessPoster(tmdbID int, mtype string) string {
 	if mtype != "tv" {
 		mtype = "movie"
@@ -376,26 +408,12 @@ func (t *TmdbClient) GetTextlessPoster(tmdbID int, mtype string) string {
 		return ""
 	}
 	var r struct {
-		Posters []struct {
-			FilePath  string `json:"file_path"`
-			ISO6391   string `json:"iso_639_1"`
-			VoteCount int    `json:"vote_count"`
-		} `json:"posters"`
+		Posters []tmdbPoster `json:"posters"`
 	}
 	if json.Unmarshal(data, &r) != nil {
 		return ""
 	}
-	best := ""
-	bestVotes := -1
-	for _, p := range r.Posters {
-		if p.FilePath == "" || p.ISO6391 != "" {
-			continue
-		}
-		if p.VoteCount > bestVotes {
-			best, bestVotes = p.FilePath, p.VoteCount
-		}
-	}
-	return best
+	return selectTextlessPoster(r.Posters)
 }
 
 // getListMultiPage 请求 TMDB 列表接口并自动翻页凑够 limit 条（最多 2 页）。

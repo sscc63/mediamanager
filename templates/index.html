@@ -1814,6 +1814,24 @@
             box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
         }
         .tmdb-modal-subscribe.subscribed:hover { background: #D97706; color: #fff; }
+        .tmdb-modal-subscribe.tmdb-modal-import {
+            font-size: 14px; font-weight: 600;
+            padding: 12px 34px;
+            gap: 8px;
+            background: transparent;   /* 浅白卡上的描边式按钮 */
+            color: #52525b;                 /* zinc-600 深灰字 */
+            border: 1px solid #18181b;      /* 黑色细描边 */
+            box-shadow: none;
+        }
+        .tmdb-modal-subscribe.tmdb-modal-import:hover { background: rgba(24, 26, 32, 0.05); color: #3f3f46; }
+        .tmdb-modal-subscribe.tmdb-modal-import:active { transform: scale(0.97); }
+        .tmdb-modal-subscribe.tmdb-modal-import.subscribed {
+            background: #f59e0b;                 /* 金色实底 */
+            color: #fff;                         /* 白字 */
+            border-color: #f59e0b;
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25);
+        }
+        .tmdb-modal-subscribe.tmdb-modal-import.subscribed:hover { background: #fbbf24; color: #fff; }
         .tmdb-modal-overview {
             font-size: 14px;
             line-height: 1.7;
@@ -2068,6 +2086,14 @@
                     </div>
                 </div>
 
+                <!-- 频道更新：近 180 分钟频道监控识别出的影视（点击「>」进订阅探索页查看全部海报） -->
+                <div class="trend-rank">
+                    <div class="trend-rank-head">
+                        <span class="trend-rank-name" onclick="gotoChannelUpdates()" role="button" title="查看全部频道更新">频道更新 <i class="fa fa-chevron-right" style="font-size:13px;vertical-align:middle;"></i></span>
+                    </div>
+                    <div class="trend-rank-track" id="trendRankTrackChannel"></div>
+                </div>
+
                 <!-- TMDB 热门电影：直接铺面横滑海报条（无卡片盒子，app 式） -->
                 <div class="trend-rank">
                     <div class="trend-rank-head">
@@ -2107,7 +2133,7 @@
                     </div>
                     <div class="sub-gate">
                         <div class="sub-gate-item" onclick="gotoSubscribed()" role="button" title="查看已订阅">
-                            <i class="fas fa-clapperboard"></i><span>已订阅</span>
+                            <i class="far fa-bell"></i><span>已订阅</span>
                         </div>
                         <div class="sub-gate-item" onclick="gotoCalendar()" role="button" title="查看追剧日历">
                             <i class="far fa-calendar-alt"></i><span>追剧日历</span>
@@ -2115,13 +2141,6 @@
                     </div>
                 </div>
 
-                <!-- 频道更新：近 180 分钟频道监控识别出的影视（点击「>」进订阅探索页查看全部海报） -->
-                <div class="trend-rank">
-                    <div class="trend-rank-head">
-                        <span class="trend-rank-name" onclick="gotoChannelUpdates()" role="button" title="查看全部频道更新">频道更新 <i class="fa fa-chevron-right" style="font-size:13px;vertical-align:middle;"></i></span>
-                    </div>
-                    <div class="trend-rank-track" id="trendRankTrackChannel"></div>
-                </div>
             </section>
 
             <!-- ============ Tab 1: 用户配置 ============ -->
@@ -2967,13 +2986,22 @@
 
         // 首页「TMDB 电影/电视剧趋势榜」：加载今日趋势前 10，渲染横滑海报条
         const _trendRankLoaded = {};
+        // 同一 URL 只发一次请求。趋势榜与「订阅探索」入口海报要的是同一份 TV 趋势数据，
+        // 不共用就会在首屏并发打两遍同一个接口（后端缓存未命中时等于两次上游 TMDB 请求）。
+        const _rankReqCache = {};
+        function fetchRankOnce(url) {
+            if (!_rankReqCache[url]) {
+                _rankReqCache[url] = api(url).catch(e => { delete _rankReqCache[url]; throw e; });
+            }
+            return _rankReqCache[url];
+        }
         async function loadTrendRank(mediaType, trackId) {
             const track = document.getElementById(trackId);
             if (!track || _trendRankLoaded[trackId]) return;
             _trendRankLoaded[trackId] = true;
             track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载中...</div>';
             try {
-                const d = await api('/api/tmdb?category=trending&type=' + mediaType + '&time_window=day');
+                const d = await fetchRankOnce('/api/tmdb?category=trending&type=' + mediaType + '&time_window=day');
                 const items = (d && d.items ? d.items : []).filter(i => i.poster_path).slice(0, 10);
                 if (!items.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">暂无数据</div>'; return; }
                 track.innerHTML = items.map((it, idx) => {
@@ -2989,6 +3017,7 @@
             }
         }
         function openTrendRankItem(el) {
+            _channelTargetURL = (el.dataset && el.dataset.targetUrl) ? el.dataset.targetUrl : '';
             try { openTmdbDetail(JSON.parse(decodeURIComponent(el.dataset.payload))); }
             catch (e) { /* 忽略 */ }
         }
@@ -3010,7 +3039,7 @@
             _maoyanRankLoaded[trackId] = true;
             track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载中...</div>';
             try {
-                const d = await api('/api/maoyan?view=' + v);
+                const d = await fetchRankOnce('/api/maoyan?view=' + v);
                 const items = (d && d.items ? d.items : []).filter(i => i.poster_path).slice(0, 10);
                 if (!items.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">暂无数据</div>'; return; }
                 track.innerHTML = items.map((it, idx) => {
@@ -3051,15 +3080,18 @@
             track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载中...</div>';
             try {
                 const d = await api('/api/monitor/recent?hours=180&limit=20');
-                const items = (d && d.items ? d.items : []).filter(i => i.poster_path).slice(0, 20);
-                if (!items.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">近 180 分钟暂无频道更新</div>'; return; }
-                track.innerHTML = items.map((it) => {
-                    const url = `https://image.tmdb.org/t/p/w780${it.poster_path}`;
+                const raw = (d && d.items ? d.items : []);
+                if (!raw.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">近 180 分钟暂无频道更新</div>'; return; }
+                track.innerHTML = raw.slice(0, 20).map((it) => {
+                    const url = it.poster_path ? `https://image.tmdb.org/t/p/w342${it.poster_path}` : '';
                     const payload = encodeURIComponent(JSON.stringify({ id: it.tmdb_id || 0, type: it.media_type || 'movie', title: it.title, release_date: it.year ? it.year + '-01-01' : '', poster_path: it.poster_path, backdrop_path: '' }));
+                    const body = url
+                        ? `<img class="poster" loading="lazy" src="${url}" alt="poster" onerror="this.remove()">`
+                        : `<div style="width:100%;aspect-ratio:2/3;border-radius:12px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#292a30,#3a3a42);color:#cfcfd6;font-size:11px;text-align:center;padding:6px;box-sizing:border-box;">${escapeHtml(it.title || '')}</div>`;
                     return `<div class="trend-rank-item" data-payload="${payload}" data-target-url="${escapeHtml(it.target_url || '')}"
                         onclick="chRankClick(event,this)" oncontextmenu="event.preventDefault();channelLongMenu(this,event.clientX,event.clientY)"
                         ontouchstart="channelTouchStart(event,this)" ontouchmove="channelTouchMove(event)" ontouchend="channelTouchEnd(event,this)">
-                        <img class="poster" loading="lazy" src="${url}" alt="poster" onerror="this.style.visibility='hidden'">
+                        ${body}
                     </div>`;
                 }).join('');
             } catch (e) {
@@ -3091,6 +3123,7 @@
         }
         // ============ 频道更新卡片：支持长按（或鼠标右键）弹出「立即入库」菜单 ============
         let _chPressTimer = null, _chPT = 0, _chPX = 0, _chPY = 0, _chLonged = false;
+        let _channelTargetURL = '';
         function channelCardHtml(it) {
             const url = it.poster_path ? `https://image.tmdb.org/t/p/w342${it.poster_path}` : '';
             const target = it.target_url || '';
@@ -3099,7 +3132,6 @@
                 ontouchstart="channelTouchStart(event,this)" ontouchmove="channelTouchMove(event)" ontouchend="channelTouchEnd(event,this)">
                 <div class="tmdb-poster">
                     ${url ? `<img src="${url}" alt="${escapeHtml(it.title || '')}" loading="lazy" onerror="this.remove()">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-400);font-size:12px;">暂无海报</div>'}
-                    ${it.year ? `<span class="tmdb-score" style="top:auto;bottom:6px;right:6px;">${escapeHtml(it.year)}</span>` : ''}
                 </div>
                 <div class="tmdb-card-body"><div class="tmdb-title" title="${escapeHtml(it.title || '')}">${escapeHtml(it.title || '')}</div></div>
             </div>`;
@@ -3143,6 +3175,13 @@
               .catch(() => channelToast('入库失败，请查看 TG 通知'));
         }
         function hideChannelMenu() { const m = document.getElementById('channelLongMenu'); if (m) m.style.display = 'none'; }
+        function channelDetailTransfer() {
+            const url = _channelTargetURL;
+            if (!url) return;
+            fetch('/api/monitor/transfer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_url: url }) })
+                .then(r => r.json()).then(d => { if (!d || !d.ok) channelToast('入库失败，请查看 TG 通知'); })
+                .catch(() => channelToast('入库失败，请查看 TG 通知'));
+        }
         function channelToast(msg) {
             let t = document.getElementById('channelToast');
             if (!t) {
@@ -3245,6 +3284,7 @@
 
         function openTmdbDetailFromCard(card) {
             if (!card) return;
+            _channelTargetURL = (card.dataset && card.dataset.targetUrl) ? card.dataset.targetUrl : '';
             // 未匹配到 TMDB 的猫眼条目只有标题（id 为 0），点不进详情
             if (!card.dataset.id || card.dataset.id === '0') return;
             openTmdbDetail({
@@ -3268,6 +3308,7 @@
                     box.innerHTML = `<div style="padding:48px 20px;text-align:center;color:var(--text-600);">${escapeHtml(data.error || '详情加载失败')}</div>`;
                     return;
                 }
+                // 详情页只在卡片自带频道 target_url 时才显示「立即入库」（避免普通榜单误判）
                 renderTmdbDetail(data.detail);
             } catch (e) {
                 box.innerHTML = '<div style="padding:48px 20px;text-align:center;color:var(--text-600);">详情加载失败：' + escapeHtml(e.message || '请求失败') + '</div>';
@@ -3306,15 +3347,16 @@
                 <div class="tmdb-modal-body">
                     <div class="tmdb-modal-title">
                         <span>${escapeHtml(mainTitle)}</span>
-                        <button class="tmdb-modal-subscribe${isTmdbSubscribed(mainTitle) ? ' subscribed' : ''}" data-title="${escapeHtml(mainTitle)}" onclick="subscribeTmdb(this.dataset.title, this)" title="${isTmdbSubscribed(mainTitle) ? '点击取消订阅' : '添加到频道监控选择关键词'}">
-                            <i class="fas fa-bell"></i> ${isTmdbSubscribed(mainTitle) ? '已订阅' : '订阅'}
-                        </button>
                     </div>
                     <div class="tmdb-modal-meta">${meta.map(escapeHtml).join('<span class="tmdb-meta-dot">·</span>')}</div>
                     <div class="tmdb-modal-overview">${escapeHtml(d.overview || '暂无简介')}</div>
                     ${directors ? `<div class="tmdb-modal-section">${escapeHtml(directors)}</div>` : ''}
                     ${creators ? `<div class="tmdb-modal-section">${escapeHtml(creators)}</div>` : ''}
                     ${castHtml ? `<div class="tmdb-modal-section">演员</div><div class="tmdb-modal-cast">${castHtml}</div>` : ''}
+                    <div style="display:flex;justify-content:center;gap:12px;margin-top:22px;flex-wrap:wrap;">
+                        <button class="tmdb-modal-subscribe tmdb-modal-import${isTmdbSubscribed(mainTitle) ? ' subscribed' : ''}" data-title="${escapeHtml(mainTitle)}" onclick="subscribeTmdb(this.dataset.title, this)" title="${isTmdbSubscribed(mainTitle) ? '点击取消订阅' : '添加到频道监控选择关键词'}"><i class="fas fa-bell"></i> ${isTmdbSubscribed(mainTitle) ? '已订阅' : '订阅'}</button>
+                        ${_channelTargetURL ? '<button class="tmdb-modal-subscribe tmdb-modal-import" onclick="channelDetailTransfer()" title="将当前频道分享链接立即转存到库"><i class="fas fa-download"></i> 立即入库</button>' : ''}
+                    </div>
                 </div>`;
         }
 
@@ -3389,8 +3431,9 @@
                 img.alt = '';
                 // 手机端用竖幅海报（2:3 纯海报），桌面端仍用原横向 hero 图
                 const vertical = window.innerWidth <= 768;
+                // 手机端首帧不预置带字海报，等待详情就绪后一次到位出无字版，避免「有字→无字」切换闪烁
                 img.src = vertical
-                    ? `https://image.tmdb.org/t/p/original${it.poster_path || it.backdrop_path}`
+                    ? ''
                     : `https://image.tmdb.org/t/p/original${it.backdrop_path || it.poster_path}`;
                 c.appendChild(img);
                 const brand = document.createElement('img');
@@ -3407,7 +3450,7 @@
                 overview.className = 'entry-overview';
                 overview.hidden = true;
                 c.appendChild(overview);
-                _loadEntryDetail(it, brand, img, meta, overview);
+                // 详情不在这里拉：只对当前可见（及相邻）的一张按需请求，见 _ensureEntryDetail
                 return c;
             }));
             _entryPosterIdx = 0;
@@ -3420,7 +3463,9 @@
         function _loadEntryDetail(item, brand, posterImg, metaEl, overviewEl) {
             if (!item || !item.id || !brand) return;
             if (!item._logoReq) {
-                item._logoReq = api(`/api/tmdb/detail?id=${encodeURIComponent(item.id)}&type=${encodeURIComponent(item.media_type || 'movie')}`)
+                // textless=1 只在手机端带：无文字海报只给手机端入口海报用，带上它后端才会补这一次请求
+                const tl = window.innerWidth <= 768 ? '&textless=1' : '';
+                item._logoReq = api(`/api/tmdb/detail?id=${encodeURIComponent(item.id)}&type=${encodeURIComponent(item.media_type || 'movie')}${tl}`)
                     .then(d => (d && d.detail ? {
                         logo: d.detail.logo_path || '',
                         textless: d.detail.textless_poster_path || '',
@@ -3436,12 +3481,14 @@
                     brand.src = `https://image.tmdb.org/t/p/w500${r.logo}`;
                     brand.hidden = false;
                 }
-                // 手机端竖幅海报改用无文字版
-                if (r.textless && posterImg && posterImg.isConnected && window.innerWidth <= 768) {
-                    const url = `https://image.tmdb.org/t/p/original${r.textless}`;
-                    posterImg.src = url;
-                    item._heroPosterUrl = url;
-                    document.documentElement.style.setProperty('--hero-bg', `url("${url}")`);
+                // 手机端：首帧 src 为空，详情就绪后一次到位使用无字版（无字版缺失则回退普通海报）——不做二次切换
+                if (posterImg && posterImg.isConnected && window.innerWidth <= 768) {
+                    const url = r.textless
+                        ? `https://image.tmdb.org/t/p/original${r.textless}`
+                        : `https://image.tmdb.org/t/p/original${item.poster_path || item.backdrop_path || ''}`;
+                    const pre = new Image();
+                    pre.onload = () => { if (posterImg.isConnected) posterImg.src = url; item._heroPosterUrl = url; };
+                    pre.src = url;
                 }
                 if (metaEl && metaEl.isConnected) {
                     const tmdbTag = '<span style="display:inline-block;background:#01b4e4;color:#fff;font-size:6.5px;font-weight:700;line-height:1;padding:2px 4px;border-radius:3px;vertical-align:1px;margin-right:4px;letter-spacing:.03em">TMDB</span>';
@@ -3453,10 +3500,27 @@
                 }
             });
         }
+        // 只为「当前可见 + 下一张」拉详情：轮播只有 active 那张可见（轮换定时器是 12 小时，实际不自动翻页），
+        // 一次给 10 张都拉等于首屏白发 9 个请求（后端每个详情还要多打一次 TMDB 图片接口）。
+        // item._logoReq 已按条目缓存 Promise，同一张重复触发不会重复请求。
+        function _ensureEntryDetail(idx) {
+            if (idx < 0 || idx >= _entryPosterItems.length) return;
+            const car = document.querySelector('#tmdb-poster .entry-carousel');
+            if (!car) return;
+            const card = car.querySelectorAll('.entry-card')[idx];
+            if (!card) return;
+            _loadEntryDetail(_entryPosterItems[idx],
+                card.querySelector('.entry-brand'),
+                card.querySelector('img:not(.entry-brand)'),
+                card.querySelector('.entry-meta'),
+                card.querySelector('.entry-overview'));
+        }
         function _updateEntryCarousel() {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
             if (!car) return;
             [...car.querySelectorAll('.entry-card')].forEach((c, i) => c.classList.toggle('active', i === _entryPosterIdx));
+            _ensureEntryDetail(_entryPosterIdx);
+            _ensureEntryDetail(_entryPosterIdx + 1);   // 预取下一张，滑动时即时可见
             const item = _entryPosterItems[_entryPosterIdx];
             if (item) {
                 const src = (window.innerWidth <= 768 && item._heroPosterUrl) || _entryImgSrc(item);
@@ -3514,7 +3578,7 @@
             // 静默模式：只预取榜单数据填充入口海报，不触碰榜单内容区
             if (silent) {
                 try {
-                    const data = await api('/api/tmdb?category=trending&type=tv&time_window=day');
+                    const data = await fetchRankOnce('/api/tmdb?category=trending&type=tv&time_window=day');
                     if (data && data.items && data.items.length) renderEntryPosters(data.items);
                 } catch (e) { /* 静默失败，入口保持为空 */ }
                 return;

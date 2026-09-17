@@ -19,10 +19,11 @@ import (
 // ttlCache 带 TTL 与容量上限的内存缓存：榜单/搜索、详情、集数、日历共用这一份实现。
 // 取值、回源、写回是分开的三步——回源期间不持锁，否则并发请求会互相排队。
 type ttlCache struct {
-	mu  sync.Mutex
-	m   map[string]ttlEntry
-	ttl time.Duration
-	max int
+	mu       sync.Mutex
+	m        map[string]ttlEntry
+	inflight map[string]*inflightCall
+	ttl      time.Duration
+	max      int
 }
 
 type ttlEntry struct {
@@ -30,8 +31,61 @@ type ttlEntry struct {
 	v  any
 }
 
+// inflightCall 一次正在进行的回源；done 关闭后 v/ok 才可读。
+type inflightCall struct {
+	done chan struct{}
+	v    any
+	ok   bool
+}
+
 func newTTLCache(ttl time.Duration, max int) *ttlCache {
-	return &ttlCache{m: map[string]ttlEntry{}, ttl: ttl, max: max}
+	return &ttlCache{
+		m:        map[string]ttlEntry{},
+		inflight: map[string]*inflightCall{},
+		ttl:      ttl,
+		max:      max,
+	}
+}
+
+// do 「取缓存 → 未命中则回源 → 写回」一条龙，并把同一 key 的并发回源合并成一次。
+// get/set 分开调用做不到这一点：冷启动时首页会同时打多个榜单、多标签页同时打开也会各请求一遍，
+// 未合并时这些并发请求都会打穿到上游。回源仍然不持锁，并发者只是等同一个结果。
+//
+// skipCache 对应接口的 refresh=1：跳过缓存读取，但依然参与合并并写回新值。
+// fetch 返回 (值, 是否值得缓存)；返回 nil 表示回源失败（不写缓存，调用方据值是否为 nil 判错）。
+func (c *ttlCache) do(key string, skipCache bool, fetch func() (any, bool)) (any, bool) {
+	if !skipCache {
+		if v, ok := c.get(key); ok {
+			return v, true
+		}
+	}
+
+	c.mu.Lock()
+	if call, ok := c.inflight[key]; ok {
+		c.mu.Unlock()
+		<-call.done
+		return call.v, call.ok
+	}
+	call := &inflightCall{done: make(chan struct{})}
+	c.inflight[key] = call
+	c.mu.Unlock()
+
+	var v any
+	var cacheable bool
+	// defer 兜住 panic：否则 inflight 残留，同 key 的后续请求会永久阻塞在 <-call.done
+	defer func() {
+		call.v, call.ok = v, cacheable
+		c.mu.Lock()
+		delete(c.inflight, key)
+		c.mu.Unlock()
+		close(call.done)
+	}()
+
+	v, cacheable = fetch()
+	if cacheable && v != nil {
+		c.set(key, v)
+	}
+	return v, cacheable
 }
 
 // get 命中且未过期时返回 (值, true)。
@@ -76,6 +130,9 @@ var (
 	embyCountCache = newTTLCache(10*time.Minute, 300)
 	// calendarCache 单部剧的排播（key 为 tmdb id）；日期过滤在读取时做，跨天不会串味
 	calendarCache = newTTLCache(24*time.Hour, 300)
+	// textlessCache 无文字海报路径（key 为 type:id）。空串也缓存——它表示「TMDB 确实没有这张图」，
+	// 不缓存的话手机端每次打开入口海报都要为同一部片重打一次 /images。
+	textlessCache = newTTLCache(24*time.Hour, 200)
 )
 
 var (
@@ -163,36 +220,30 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 		cacheKey = category + ":" + mediaType + ":" + timeWindow
 	}
 
-	if !refresh {
-		if items, ok := listCache.get(cacheKey); ok {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"configured":  true,
-				"category":    category,
-				"type":        mediaType,
-				"time_window": timeWindowIf(category, timeWindow),
-				"query":       queryOrNil(query),
-				"items":       items,
-			})
-			return
-		}
-	}
-
 	client := tmdbClient()
-	var items []transfer.TmdbListItem
-	switch {
-	case query != "":
-		items = client.SearchMedia(query, mediaType)
-	case category == "trending":
-		items = client.GetTrending(mediaType, timeWindow)
-	case category == "now_playing":
-		items = client.GetNowPlaying(mediaType)
-	case category == "top_rated":
-		items = client.GetTopRated(mediaType)
-	case category == "upcoming":
-		items = client.GetUpcoming(mediaType)
+	// 回源闭包：nil 表示失败（不缓存）；空列表算成功但不缓存（下次仍然重试）
+	fetchItems := func() (any, bool) {
+		var items []transfer.TmdbListItem
+		switch {
+		case query != "":
+			items = client.SearchMedia(query, mediaType, 30)
+		case category == "trending":
+			items = client.GetTrending(mediaType, timeWindow)
+		case category == "now_playing":
+			items = client.GetNowPlaying(mediaType)
+		case category == "top_rated":
+			items = client.GetTopRated(mediaType)
+		case category == "upcoming":
+			items = client.GetUpcoming(mediaType)
+		}
+		if items == nil {
+			return nil, false
+		}
+		return items, len(items) > 0
 	}
 
-	if items == nil {
+	itemsVal, _ := listCache.do(cacheKey, refresh, fetchItems)
+	if itemsVal == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"configured": true,
 			"items":      []any{},
@@ -200,9 +251,7 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if len(items) > 0 {
-		listCache.set(cacheKey, items)
-	}
+	items, _ := itemsVal.([]transfer.TmdbListItem)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"configured":  true,
 		"category":    category,
@@ -284,23 +333,43 @@ func (s *Server) handleTMDBDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 缓存 24h；需要强刷时带 refresh=1（与榜单/搜索接口同款约定）
+	// 走 do() 合并并发回源：入口海报与详情页可能同时请求同一部片
 	cacheKey := mediaType + ":" + idStr
-	var detail *transfer.TmdbDetail
-	if q.Get("refresh") != "1" {
-		if v, ok := detailCache.get(cacheKey); ok {
-			detail = v.(*transfer.TmdbDetail)
+	val, _ := detailCache.do(cacheKey, q.Get("refresh") == "1", func() (any, bool) {
+		client := tmdbClient()
+		if client == nil {
+			return nil, false
 		}
-	}
-	if detail == nil {
-		detail = tmdbClient().GetDetailDict(tmdbID, mediaType)
-		if detail != nil {
-			detailCache.set(cacheKey, detail)
+		d := client.GetDetailDict(tmdbID, mediaType)
+		if d == nil {
+			return nil, false
 		}
-	}
+		return d, true
+	})
+	detail, _ := val.(*transfer.TmdbDetail)
 	if detail == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"configured": true, "error": "请求失败，请检查 ENV_TMDB_API_KEY 或网络"})
 		return
 	}
+
+	// 无文字海报只有手机端（≤768px）的入口海报用得到，而它是详情里唯一需要额外一次 /images
+	// 往返的字段。只有显式带 textless=1 才去补，桌面端与详情弹窗都不付这个代价。
+	if q.Get("textless") == "1" && detail.TextlessPosterPath == "" {
+		if client := tmdbClient(); client != nil {
+			key := mediaType + ":" + idStr
+			v, _ := textlessCache.do(key, false, func() (any, bool) {
+				return client.GetTextlessPoster(tmdbID, mediaType), true
+			})
+			if path, _ := v.(string); path != "" {
+				// 浅拷贝再填：detail 是缓存里的共享对象，直接写字段会和并发读它的请求打架；
+				// 其余字段（含切片）与缓存对象共享且只读，浅拷贝足够。
+				cp := *detail
+				cp.TextlessPosterPath = path
+				detail = &cp
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"configured": true, "detail": detail})
 }
 
