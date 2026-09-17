@@ -336,13 +336,6 @@
                 loader.classList.remove('show');
             }
         });
-
-        // 回车键提交
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !submitBtn.disabled) {
-                form.dispatchEvent(new Event('submit'));
-            }
-        });
     </script>
 </body>
 </html>

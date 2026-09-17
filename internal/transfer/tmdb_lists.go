@@ -35,10 +35,9 @@ type TmdbCastMember struct {
 
 // TmdbDetail TMDB 完整详情（含演职员/中文译名），供前端弹窗展示。
 type TmdbDetail struct {
-	ID                  int              `json:"id"`
-	Title               string           `json:"title"`
-	TitleZh             string           `json:"title_zh"`
-	OriginalTitle       string           `json:"original_title"`
+	ID            int              `json:"id"`
+	Title         string           `json:"title"`
+	OriginalTitle string           `json:"original_title"`
 	MediaType           string           `json:"media_type"`
 	Overview            string           `json:"overview"`
 	PosterPath          string           `json:"poster_path"`
@@ -279,6 +278,7 @@ func (t *TmdbClient) GetDetailDict(tmdbID int, mediaType string) *TmdbDetail {
 	data, err := t.getJSON(context.Background(), fmt.Sprintf("/%s/%d", mediaType, tmdbID), map[string]string{
 		"append_to_response":     "credits,images",
 		"include_image_language": "zh,en,null",
+		"language":               "zh-CN",   // 中文：genres/overview/title 均返回简体中文，避免类型中英混杂
 	})
 	if err != nil {
 		log.Printf("TMDB 详情请求失败 (id=%d, type=%s): %v", tmdbID, mediaType, err)
@@ -328,7 +328,6 @@ func (t *TmdbClient) GetDetailDict(tmdbID int, mediaType string) *TmdbDetail {
 		Runtime:          raw.Runtime,
 		NumberOfEpisodes: raw.NumberOfEpisodes,
 		NumberOfSeasons:  raw.NumberOfSeasons,
-		TitleZh:          t.fetchTitleZh(tmdbID, mediaType),
 	}
 	for _, g := range raw.Genres {
 		if g.Name != "" {
@@ -397,47 +396,6 @@ func (t *TmdbClient) GetTextlessPoster(tmdbID int, mtype string) string {
 		}
 	}
 	return best
-}
-
-// fetchTitleZh 获取简体中文译名（优先中国大陆 CN）。
-func (t *TmdbClient) fetchTitleZh(tmdbID int, mediaType string) string {
-	transData, err := t.getJSON(context.Background(), fmt.Sprintf("/%s/%d/translations", mediaType, tmdbID), nil)
-	if err != nil {
-		return ""
-	}
-	var td struct {
-		Translations []struct {
-			ISO639_1  string `json:"iso_639_1"`
-			ISO3166_1 string `json:"iso_3166_1"`
-			Data      struct {
-				Title string `json:"title"`
-				Name  string `json:"name"`
-			} `json:"data"`
-		} `json:"translations"`
-	}
-	if json.Unmarshal(transData, &td) != nil {
-		return ""
-	}
-	titleZh := ""
-	for _, tr := range td.Translations {
-		if tr.ISO639_1 != "zh" {
-			continue
-		}
-		translated := tr.Data.Title
-		if translated == "" {
-			translated = tr.Data.Name
-		}
-		if translated == "" {
-			continue
-		}
-		if tr.ISO3166_1 == "CN" {
-			return translated
-		}
-		if titleZh == "" {
-			titleZh = translated
-		}
-	}
-	return titleZh
 }
 
 // getListMultiPage 请求 TMDB 列表接口并自动翻页凑够 limit 条（最多 2 页）。
