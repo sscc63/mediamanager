@@ -120,8 +120,10 @@ func (c *ttlCache) set(key string, v any) {
 
 // 各接口缓存：TTL 按「数据多久才会变」定，容量按「最多同时用多少个 key」定
 var (
-	// listCache 榜单 + 关键词搜索；已订阅页最多 60 个关键词 × movie/tv = 120 个 key，容量留够免得来回淘汰
-	listCache = newTTLCache(24*time.Hour, 160)
+	// listCache 榜单 + 关键词搜索。容量要同时覆盖两条最费缓存的路径：
+	// 已订阅页 60 个关键词 × movie/tv = 120 个 key；频道更新页 limit=200 时最多 200 个片名 × movie/tv = 400 个 key。
+	// 原先只按 160 定，频道更新页一开就整批淘汰自己刚写的条目 —— 等于每次打开都重新打一遍 TMDB。
+	listCache = newTTLCache(24*time.Hour, 512)
 	// detailCache 详情（演职员 + 图片，单个值最重）
 	detailCache = newTTLCache(24*time.Hour, 200)
 	// episodeTotalCache TMDB 总集数，剧集只会增季不会改总数
@@ -190,6 +192,14 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 		category = "search"
 	}
 
+	// 混合搜索：搜索时 type=all 表示电影 + 电视剧一起搜（前端搜索框走这条）。
+	// 只有搜索支持 all —— 榜单里 movie/tv 是两个完全不同的列表，混起来没有意义。
+	requestedType := mediaType
+	hybrid := mediaType == "all" && query != ""
+	if hybrid {
+		mediaType = "movie" // 占位：只为通过下面的类型校验，实际两个类型都搜
+	}
+
 	validCategory := map[string]bool{"trending": true, "top_rated": true, "now_playing": true, "upcoming": true, "search": true}
 	if !validCategory[category] {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "不支持的 category，可选 trending/top_rated/now_playing/upcoming"})
@@ -215,7 +225,9 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 	refresh := q.Get("refresh") == "1"
 	var cacheKey string
 	if query != "" {
-		cacheKey = "search:" + mediaType + ":" + strings.ToLower(query)
+		// 用 requestedType 而不是 mediaType：hybrid 时 mediaType 已被占位成 movie，
+		// 直接用它会让混合搜索结果覆盖掉纯电影搜索的缓存条目。
+		cacheKey = "search:" + requestedType + ":" + strings.ToLower(query)
 	} else {
 		cacheKey = category + ":" + mediaType + ":" + timeWindow
 	}
@@ -225,6 +237,8 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 	fetchItems := func() (any, bool) {
 		var items []transfer.TmdbListItem
 		switch {
+		case hybrid:
+			items = client.SearchMediaHybrid(query, 30)
 		case query != "":
 			items = client.SearchMedia(query, mediaType, 30)
 		case category == "trending":
@@ -255,7 +269,7 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"configured":  true,
 		"category":    category,
-		"type":        mediaType,
+		"type":        requestedType,
 		"time_window": timeWindowIf(category, timeWindow),
 		"query":       queryOrNil(query),
 		"items":       items,

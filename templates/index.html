@@ -163,6 +163,11 @@
             font-size: 20px;   /* 与工具栏图标一致 */
             font-weight: 600;
             letter-spacing: .04em;
+            /* 搜索标题要带出关键词，超长时省略号截断：标题是绝对居中的，
+               不设上限会横向溢出、压到左右两个 48px 图标按钮上 */
+            max-width: calc(100% - 128px);
+            overflow: hidden;
+            text-overflow: ellipsis;
             white-space: nowrap;
             pointer-events: none;
             text-shadow: 0 1px 3px rgba(0,0,0,.35);
@@ -2940,6 +2945,9 @@
             if (view === 'subscribed') return '已订阅';
             if (view === 'calendar') return '追剧日历';
             if (view === 'channel') return '频道更新';
+            // 搜索走的是混合搜索（电影 + 电视剧），再挂「热门电影/电视剧」的标题就名不副实；
+            // 直接带出关键词，用户一眼知道当前看的是哪次搜索的结果（搜索框回车后已清空）。
+            if (_tmdbQuery) return '搜索：' + _tmdbQuery;
             return _tmdbType === 'tv' ? 'TMDB热门电视剧' : 'TMDB热门电影';
         }
         function _refreshToolbarTitle() {
@@ -2975,7 +2983,8 @@
 
         function setTmdbCategory(category) {
             _tmdbCategory = category;
-            _tmdbQuery = '';
+            _tmdbQuery = '';          // 切榜单即退出搜索模式
+            _refreshToolbarTitle();   // 标题从「搜索结果」回到「TMDB热门电影/电视剧」
             loadTmdb();
         }
 
@@ -3017,9 +3026,13 @@
             }
         }
         function openTrendRankItem(el) {
-            _channelTargetURL = (el.dataset && el.dataset.targetUrl) ? el.dataset.targetUrl : '';
-            try { openTmdbDetail(JSON.parse(decodeURIComponent(el.dataset.payload))); }
-            catch (e) { /* 忽略 */ }
+            let item;
+            try { item = JSON.parse(decodeURIComponent(el.dataset.payload)); }
+            catch (e) { return; }
+            // 频道更新条目的分享链接随条目一起传进详情页，不再靠全局变量传递：
+            // 首页大海报等入口没有 target_url，用全局变量会把上一次频道卡片的链接带过去。
+            item.target_url = (el.dataset && el.dataset.targetUrl) ? el.dataset.targetUrl : '';
+            openTmdbDetail(item);
         }
         // 「>」打开完整电影/电视剧趋势榜页面
         function openTrendRankMore() { gotoTmdbTrend('movie'); }
@@ -3122,7 +3135,7 @@
             }
         }
         // ============ 频道更新卡片：支持长按（或鼠标右键）弹出「立即入库」菜单 ============
-        let _chPressTimer = null, _chPT = 0, _chPX = 0, _chPY = 0, _chLonged = false;
+        let _chPressTimer = null, _chLongResetTimer = null, _chPT = 0, _chPX = 0, _chPY = 0, _chLonged = false;
         let _channelTargetURL = '';
         function channelCardHtml(it) {
             const url = it.poster_path ? `https://image.tmdb.org/t/p/w342${it.poster_path}` : '';
@@ -3153,6 +3166,11 @@
         function channelTouchEnd(ev, cd) { clearTimeout(_chPressTimer); _chPressTimer = null; }
         function channelLongMenu(cd, x, y) {
             _chLonged = true;
+            // 桌面右键不会产生 click 事件，_chLonged 会一直挂着把下一次左键吞掉
+            //（表现为「右键一次之后，第一次左键点卡片没反应」）。延时复位，
+            // 既拦得住长按后紧跟的合成点击，又不影响之后的正常点击。
+            clearTimeout(_chLongResetTimer);
+            _chLongResetTimer = setTimeout(() => { _chLonged = false; }, 400);
             const tgt = cd && cd.getAttribute ? cd.getAttribute('data-target-url') : '';
             const m = document.getElementById('channelLongMenu');
             if (!m) return;
@@ -3162,26 +3180,38 @@
             m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 8) + 'px';
             m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 8) + 'px';
         }
-        function channelMenuTransfer(el) {
-            const m = document.getElementById('channelLongMenu');
-            const url = m ? m.dataset.url : '';
-            hideChannelMenu();
-            if (!url) return;
+        // 入库请求进行中标记。后端这条路径没有去重（自动监控那条靠 IsProcessed 拦重复），
+        // 连点会真的转存两份，所以必须自己拦住，并且立刻给个反馈 ——
+        // 转存要先递归列完整棵分享目录，等待期间没有任何提示会让人以为没点上。
+        let _chTransferBusy = false;
+        function _channelDoTransfer(url) {
+            if (!url || _chTransferBusy) return;
+            _chTransferBusy = true;
+            channelToast('正在入库…');
             fetch('/api/monitor/transfer', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_url: url })
-            }).then(r => r.json()).then(d => { if (!d || !d.ok) channelToast('入库失败，请查看 TG 通知'); })
-              .catch(() => channelToast('入库失败，请查看 TG 通知'));
+            }).then(r => r.json())
+              .then(d => channelToast(d && d.ok ? '已提交入库，请留意 TG 通知' : '入库失败，请查看 TG 通知'))
+              .catch(() => channelToast('入库失败，请查看 TG 通知'))
+              .finally(() => { _chTransferBusy = false; });
+        }
+        function channelMenuTransfer(el) {
+            const m = document.getElementById('channelLongMenu');
+            const url = m ? m.dataset.url : '';
+            hideChannelMenu();
+            _channelDoTransfer(url);
         }
         function hideChannelMenu() { const m = document.getElementById('channelLongMenu'); if (m) m.style.display = 'none'; }
-        function channelDetailTransfer() {
-            const url = _channelTargetURL;
-            if (!url) return;
-            fetch('/api/monitor/transfer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_url: url }) })
-                .then(r => r.json()).then(d => { if (!d || !d.ok) channelToast('入库失败，请查看 TG 通知'); })
-                .catch(() => channelToast('入库失败，请查看 TG 通知'));
-        }
+        // 菜单弹出后点页面别处 / 滚动页面都要关掉：原先只有「点了菜单项」才关，
+        // 右键弹出后点其它地方，菜单会一直挂在屏幕上。
+        document.addEventListener('click', function (e) {
+            const m = document.getElementById('channelLongMenu');
+            if (m && m.style.display === 'block' && !m.contains(e.target)) hideChannelMenu();
+        }, true);
+        window.addEventListener('scroll', hideChannelMenu, { passive: true });
+        function channelDetailTransfer() { _channelDoTransfer(_channelTargetURL); }
         function channelToast(msg) {
             let t = document.getElementById('channelToast');
             if (!t) {
@@ -3284,19 +3314,23 @@
 
         function openTmdbDetailFromCard(card) {
             if (!card) return;
-            _channelTargetURL = (card.dataset && card.dataset.targetUrl) ? card.dataset.targetUrl : '';
             // 未匹配到 TMDB 的猫眼条目只有标题（id 为 0），点不进详情
             if (!card.dataset.id || card.dataset.id === '0') return;
             openTmdbDetail({
                 id: card.dataset.id,
                 type: card.dataset.type,
-                title: card.dataset.title
+                title: card.dataset.title,
+                target_url: card.dataset.targetUrl || ''
             });
         }
 
         async function openTmdbDetail(item) {
             const box = document.getElementById('tmdb-detail-content');
             if (!box) return;
+            // 「立即入库」只对带频道分享链接的条目显示。这里按本次传入的条目统一重置，
+            // 不依赖各调用方各自维护：首页大海报等入口没有 target_url，一旦不清就会把上一次
+            // 频道卡片的链接带过来 —— 详情页错误显示「立即入库」，点下去转存的是旧链接。
+            _channelTargetURL = (item && item.target_url) ? item.target_url : '';
             // 记录从哪个页面进入详情，供返回键回退到上一页
             const from = document.querySelector('.tab-panel.active');
             _detailFromTab = (from && from.id && from.id !== 'tab-tmdb-detail') ? from.id.replace('tab-', '') : 'system';
@@ -3308,7 +3342,6 @@
                     box.innerHTML = `<div style="padding:48px 20px;text-align:center;color:var(--text-600);">${escapeHtml(data.error || '详情加载失败')}</div>`;
                     return;
                 }
-                // 详情页只在卡片自带频道 target_url 时才显示「立即入库」（避免普通榜单误判）
                 renderTmdbDetail(data.detail);
             } catch (e) {
                 box.innerHTML = '<div style="padding:48px 20px;text-align:center;color:var(--text-600);">详情加载失败：' + escapeHtml(e.message || '请求失败') + '</div>';
@@ -3406,6 +3439,7 @@
         let _entryPosterTimer = null;
         let _entryPosterTouch = null;
         let _heroBgTimer = null;
+        let _heroBgCurrent = null;   // 已应用的 --hero-bg，同一张图不重复走淡出淡入
         function _entryImgSrc(i) {
             return `https://image.tmdb.org/t/p/w1280${i.backdrop_path || i.poster_path}`;
         }
@@ -3415,44 +3449,66 @@
             const filtered = items.filter(i => i.backdrop_path || i.poster_path);
             _entryPosterAll = filtered.slice(0, 10);
             _entryPosterItems = _entryPosterAll.slice();
+            _pruneEntryCardPool();
             if (_entryPosterItems.length === 0) return;
             _buildEntryCarousel();
+        }
+        // 卡片元素按条目缓存复用 —— 这是输入时闪屏的主因。
+        // 原先 _buildEntryCarousel 每次都用新建的 <img> 铺一遍，新元素必须重新解码
+        // original 尺寸的大图（单张 2~8MB），解码完成前那块区域是空白；再叠加 .entry-card
+        // 的 opacity .45s 淡入，每敲一个字符就是「海报整块闪一下」。
+        // 复用同一个元素（replaceChildren 只是移动节点）不会重新解码，也不会重播淡入。
+        let _entryCardPool = new Map();
+        let _entryCardVertical = null;   // 建卡时用的断点模式；跨过 768px 断点则整池作废重建
+        function _entryCardKey(it) { return (it.media_type || 'movie') + ':' + it.id; }
+        // 池子只保留当前还在用的条目：每张卡都挂着一个已解码的大图，
+        // 不设界会随榜单刷新越积越多 —— 正是这一轮一直在收的内存形态。
+        function _pruneEntryCardPool() {
+            const alive = new Set(_entryPosterItems.concat(_entryPosterAll).map(_entryCardKey));
+            for (const k of [..._entryCardPool.keys()]) {
+                if (!alive.has(k)) _entryCardPool.delete(k);
+            }
+        }
+        function _entryCard(it) {
+            const vertical = window.innerWidth <= 768;
+            if (_entryCardVertical !== vertical) { _entryCardPool.clear(); _entryCardVertical = vertical; }
+            const key = _entryCardKey(it);
+            const hit = _entryCardPool.get(key);
+            if (hit) return hit;
+            const c = document.createElement('div');
+            c.className = 'entry-card';
+            const img = document.createElement('img');
+            img.loading = 'lazy';
+            img.alt = '';
+            // 手机端首帧不预置带字海报，等待详情就绪后一次到位出无字版，避免「有字→无字」切换闪烁
+            img.src = vertical
+                ? ''
+                : `https://image.tmdb.org/t/p/original${it.backdrop_path || it.poster_path}`;
+            c.appendChild(img);
+            const brand = document.createElement('img');
+            brand.className = 'entry-brand';
+            brand.alt = '';
+            brand.loading = 'lazy';
+            brand.hidden = true;
+            c.appendChild(brand);
+            const meta = document.createElement('div');
+            meta.className = 'entry-meta';
+            meta.hidden = true;
+            c.appendChild(meta);
+            const overview = document.createElement('div');
+            overview.className = 'entry-overview';
+            overview.hidden = true;
+            c.appendChild(overview);
+            // 详情不在这里拉：只对当前可见（及相邻）的一张按需请求，见 _ensureEntryDetail
+            _entryCardPool.set(key, c);
+            return c;
         }
         function _buildEntryCarousel() {
             const strip = document.getElementById('tmdb-poster');
             if (!strip) return;
             let car = strip.querySelector('.entry-carousel');
             if (!car) { car = document.createElement('div'); car.className = 'entry-carousel'; strip.appendChild(car); }
-            car.replaceChildren(..._entryPosterItems.map(it => {
-                const c = document.createElement('div');
-                c.className = 'entry-card';
-                const img = document.createElement('img');
-                img.loading = 'lazy';
-                img.alt = '';
-                // 手机端用竖幅海报（2:3 纯海报），桌面端仍用原横向 hero 图
-                const vertical = window.innerWidth <= 768;
-                // 手机端首帧不预置带字海报，等待详情就绪后一次到位出无字版，避免「有字→无字」切换闪烁
-                img.src = vertical
-                    ? ''
-                    : `https://image.tmdb.org/t/p/original${it.backdrop_path || it.poster_path}`;
-                c.appendChild(img);
-                const brand = document.createElement('img');
-                brand.className = 'entry-brand';
-                brand.alt = '';
-                brand.loading = 'lazy';
-                brand.hidden = true;
-                c.appendChild(brand);
-                const meta = document.createElement('div');
-                meta.className = 'entry-meta';
-                meta.hidden = true;
-                c.appendChild(meta);
-                const overview = document.createElement('div');
-                overview.className = 'entry-overview';
-                overview.hidden = true;
-                c.appendChild(overview);
-                // 详情不在这里拉：只对当前可见（及相邻）的一张按需请求，见 _ensureEntryDetail
-                return c;
-            }));
+            car.replaceChildren(..._entryPosterItems.map(_entryCard));
             _entryPosterIdx = 0;
             _updateEntryCarousel();
             _bindEntrySwipe(strip);
@@ -3525,6 +3581,10 @@
             if (item) {
                 const src = (window.innerWidth <= 768 && item._heroPosterUrl) || _entryImgSrc(item);
                 const nextBg = `url("${src}")`;
+                // 图没换就别再走一遍「淡出 → 180ms → 淡入」：搜索框每次重建轮播都会调到这里，
+                // 无条件过渡等于每敲一个字符让整页模糊背景闪一下。
+                if (nextBg === _heroBgCurrent) return;
+                _heroBgCurrent = nextBg;
                 document.body.classList.add('hero-bg-changing');
                 if (_heroBgTimer) clearTimeout(_heroBgTimer);
                 _heroBgTimer = setTimeout(() => {
@@ -3590,7 +3650,9 @@
             try {
                 let query;
                 if (_tmdbQuery) {
-                    query = `q=${encodeURIComponent(_tmdbQuery)}&type=${encodeURIComponent(_tmdbType)}` +
+                    // 混合搜索：type=all 让后端走 /search/multi，一次把电影和电视剧都搜出来。
+                    // 原先固定带 _tmdbType（默认 movie），搜剧名会一条都搜不到。
+                    query = `q=${encodeURIComponent(_tmdbQuery)}&type=all` +
                         (force ? '&refresh=1' : '');
                 } else {
                     query = `category=${encodeURIComponent(_tmdbCategory)}&type=${encodeURIComponent(_tmdbType)}` +
@@ -3657,18 +3719,34 @@
         const _memHistory = [];   // 仅保留 ~150 秒即可覆盖渲染窗口(90s)+余量，避免留存 10 分钟历史造成冗余占用
         let _memYMin = null, _memYMax = null;   // Y 轴平滑后的显示范围（跨帧，供收窄缓动用）
 
-        function startUsagePolling() {
-            if (_usageTimer) return;
+        // _usagePollWanted 记录「当前页面是否需要这个轮询」，与定时器是否真的在跑分开：
+        // 页面隐藏时定时器要停，但用户切回来还得接着跑。
+        let _usagePollWanted = false;
+        function _usageTimerStart() {
+            if (_usageTimer || document.hidden) return;
             loadSystemUsage();
             _usageTimer = setInterval(loadSystemUsage, 1000);
         }
-
-        function stopUsagePolling() {
+        function _usageTimerStop() {
             if (_usageTimer) {
                 clearInterval(_usageTimer);
                 _usageTimer = null;
             }
         }
+        function startUsagePolling() {
+            _usagePollWanted = true;
+            _usageTimerStart();
+        }
+        function stopUsagePolling() {
+            _usagePollWanted = false;
+            _usageTimerStop();
+        }
+        // 页面切到后台就停掉 1 秒轮询：用户看不到时没必要持续请求接口、重绘 SVG 趋势图；
+        // 切回前台且原本需要轮询时再续上（此时先补一次请求，避免图上出现空档）。
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) _usageTimerStop();
+            else if (_usagePollWanted) _usageTimerStart();
+        });
 
         // 保形平滑（monotone cubic Hermite）：切线按相邻割线限制，曲线经过所有数据点并抑制过冲，
         // 避免 Catmull-Rom 那种"爬升段先冲出一点再回落"的莫名突起
@@ -4549,10 +4627,19 @@
                 _clearHeroSearch();
             }
         });
-        // 输入分发：整理/日志 scope 下不实时过滤海报，只等回车
+        // 输入分发：整理/日志 scope 下不实时过滤海报，只等回车。
+        // 影视 scope 加 160ms 防抖：原先每个字符都要重建一次轮播 + 重放背景淡入淡出 + 滚动，
+        // 连打时肉眼就是闪屏加抖动。合并成一次既不掉帧，也感觉不到延迟。
+        let _heroSearchTimer = null;
+        let _heroSearchPrevKw = '';   // 上一次生效的过滤词，用于判断「是否刚进入搜索」
+        const HERO_SEARCH_DEBOUNCE = 160;
         function heroSearchLiveScoped(kw) {
             if (_searchScope === 'history' || _searchScope === 'logs') return;
-            heroSearchLive(kw);
+            if (_heroSearchTimer) clearTimeout(_heroSearchTimer);
+            _heroSearchTimer = setTimeout(() => {
+                _heroSearchTimer = null;
+                heroSearchLive(kw);
+            }, HERO_SEARCH_DEBOUNCE);
         }
         // 重开/重置海报轮换定时器
         function _restartEntryPoster() {
@@ -4563,7 +4650,12 @@
         }
         // ① 实时过滤订阅探索海报（标题包含匹配）；清空时还原全量池
         function heroSearchLive(kw) {
+            // 直接调用（点空白清空 / 切作用域）要取消尚未触发的防抖，
+            // 否则清空之后 160ms 那个旧关键词又会被应用回来。
+            if (_heroSearchTimer) { clearTimeout(_heroSearchTimer); _heroSearchTimer = null; }
             kw = (kw || '').trim().toLowerCase();
+            const wasEmpty = !_heroSearchPrevKw;
+            _heroSearchPrevKw = kw;
             if (!kw) {
                 // 当前已是全量池：无需重建。_buildEntryCarousel 会重新铺一遍 <img>
                 // 并把轮播索引复位到中间，空调用会表现为「海报闪一下、跳回第一张」
@@ -4581,12 +4673,16 @@
             }
             _entryPosterItems = matches;
             _buildEntryCarousel();
-            // 海报若在视口区外（页面已滚走、搜索条脱流浮在顶部），滚到可见让用户看到过滤结果
-            const ps = document.getElementById('tmdb-poster');
-            if (ps) {
-                const r = ps.getBoundingClientRect();
-                if (r.top > window.innerHeight || r.bottom < 0) {
-                    ps.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // 海报若在视口区外（页面已滚走、搜索条脱流浮在顶部），滚到可见让用户看到过滤结果。
+            // 只在「从空关键词进入搜索」时滚一次：每次输入都 scrollIntoView 会让连续的平滑滚动
+            // 互相打断，画面来回抖；已经在看海报时也不需要再滚。
+            if (wasEmpty) {
+                const ps = document.getElementById('tmdb-poster');
+                if (ps) {
+                    const r = ps.getBoundingClientRect();
+                    if (r.top > window.innerHeight || r.bottom < 0) {
+                        ps.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }
             }
         }
@@ -4614,6 +4710,7 @@
         function openTmdbSearch(kw) {
             if (_tmdbView !== 'list') _tmdbView = 'list';
             _tmdbQuery = kw;
+            _refreshToolbarTitle();   // 标题切到「搜索结果」，否则还挂着上次的「TMDB热门电影」
             loadTmdb();
             switchTab('tmdb');
         }

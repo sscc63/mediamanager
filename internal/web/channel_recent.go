@@ -51,9 +51,10 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 			if hit := channelSearchFirst(client, c.Title, c.Year, c.Type); hit != nil {
 				item["tmdb_id"] = hit.ID
 				item["poster_path"] = hit.PosterPath
-				if item["media_type"] == "" {
-					item["media_type"] = "movie" // 未识别类型时按 movie 展示，详情页据 tmdb 结果可再细分
-				}
+				// 一律采用命中结果自带的类型：tmdb_id 与类型必须配对，否则前端会拿
+				// /movie/<剧集id> 去查详情（电影与剧的 id 是两套独立空间），显示成无关作品。
+				// 识别出的类型为空时 channelSearchFirst 是 movie+tv 都搜，命中很可能是剧集。
+				item["media_type"] = hit.MediaType
 			}
 		}
 		items = append(items, item)
@@ -111,12 +112,15 @@ func channelSearchFirst(client *transfer.TmdbClient, title, year, mtype string) 
 	if a, ok := channelAlias[normTitle(title)]; ok && a != "" {
 		title = a
 	}
-	order := []string{"tv"}
-	if mtype == "tv" {
+	// 识别出类型就只搜该类型；识别不出（消息里既没有「类型：」行、也没有季集信息）才两个都搜，
+	// 否则剧集会被整个漏掉。命中结果自带 media_type，调用方据此决定详情走哪个接口。
+	var order []string
+	switch mtype {
+	case "tv":
 		order = []string{"tv"}
-	} else if mtype == "movie" {
+	case "movie":
 		order = []string{"movie"}
-	} else {
+	default:
 		order = []string{"movie", "tv"}
 	}
 	// 汇总所有类型的候选，做一次统一的年份优先、再带海报回退

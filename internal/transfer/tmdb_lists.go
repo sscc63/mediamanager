@@ -63,6 +63,7 @@ type TmdbDetail struct {
 // tmdbListRaw TMDB 列表接口原始项（电影/剧集字段兼容）。
 type tmdbListRaw struct {
 	ID               int     `json:"id"`
+	MediaType        string  `json:"media_type"` // 仅 /search/multi、/trending 逐项返回；单类型接口没有
 	Title            string  `json:"title"`
 	Name             string  `json:"name"`
 	OriginalTitle    string  `json:"original_title"`
@@ -297,6 +298,35 @@ func (t *TmdbClient) SearchMedia(query, mediaType string, limit int) []TmdbListI
 	return normalizeTmdbList(items, mediaType)
 }
 
+// SearchMediaHybrid 混合搜索：电影 + 电视剧一起搜，按 TMDB 自身的相关性排序返回。
+//
+// 用 /search/multi 而不是分别打 /search/movie + /search/tv 再拼接：一次上游请求就能拿到
+// 跨类型的相关性排序；自己拼接只能靠启发式排序（电影整体排在剧前面，或按评分/热度重排，
+// 都不准），而且要打两次上游。
+// /search/multi 会带出 person（演职员）结果，这里没有意义，直接丢掉。
+func (t *TmdbClient) SearchMediaHybrid(query string, limit int) []TmdbListItem {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	raw := t.getListMultiPage("/search/multi", limit, map[string]string{"query": query, "language": "zh-CN"})
+	// person 项的 media_type 不是 movie/tv，先滤掉；剩下每项都用自己带的类型归一化
+	kept := make([]tmdbListRaw, 0, len(raw))
+	for _, it := range raw {
+		if it.MediaType == "movie" || it.MediaType == "tv" {
+			kept = append(kept, it)
+		}
+	}
+	items := normalizeTmdbList(kept, "")
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return items
+}
+
 // GetDetailDict 获取 TMDB 完整详情（含演职员/中文译名），供前端弹窗展示。
 func (t *TmdbClient) GetDetailDict(tmdbID int, mediaType string) *TmdbDetail {
 	if mediaType != "tv" {
@@ -419,7 +449,9 @@ func (t *TmdbClient) GetTextlessPoster(tmdbID int, mtype string) string {
 // getListMultiPage 请求 TMDB 列表接口并自动翻页凑够 limit 条（最多 2 页）。
 func (t *TmdbClient) getListMultiPage(path string, limit int, params map[string]string) []tmdbListRaw {
 	var items []tmdbListRaw
-	seen := map[int]bool{}
+	// 去重键带上 media_type：/search/multi 里电影与电视剧的 id 是两个独立空间，
+	// 只用 id 去重会把「电影 550」和「剧集 550」当成同一条丢掉。
+	seen := map[string]bool{}
 	for page := 1; page <= 2; page++ {
 		p := map[string]string{}
 		for k, v := range params {
@@ -446,10 +478,11 @@ func (t *TmdbClient) getListMultiPage(path string, limit int, params map[string]
 		}
 		for _, item := range r.Results {
 			if item.ID != 0 {
-				if seen[item.ID] {
+				key := item.MediaType + ":" + strconv.Itoa(item.ID)
+				if seen[key] {
 					continue
 				}
-				seen[item.ID] = true
+				seen[key] = true
 			}
 			items = append(items, item)
 			if len(items) >= limit {
@@ -464,12 +497,19 @@ func (t *TmdbClient) getListMultiPage(path string, limit int, params map[string]
 func normalizeTmdbList(items []tmdbListRaw, mediaType string) []TmdbListItem {
 	out := make([]TmdbListItem, 0, len(items))
 	for _, item := range items {
+		// /search/multi、/trending 会逐项带 media_type；单类型接口（/movie/xxx、/tv/xxx）不带，
+		// 回退到调用方传入的类型。混合搜索必须用每项自己的类型，否则电视剧会被盖成 movie
+		// （前端 data-type 错，点开详情会拿错接口）。
+		mt := item.MediaType
+		if mt != "movie" && mt != "tv" {
+			mt = mediaType
+		}
 		title := item.Title
 		if title == "" {
 			title = item.Name
 		}
 		if title == "" {
-			if mediaType == "tv" {
+			if mt == "tv" {
 				title = item.OriginalName
 			} else {
 				title = item.OriginalTitle
@@ -482,7 +522,7 @@ func normalizeTmdbList(items []tmdbListRaw, mediaType string) []TmdbListItem {
 		out = append(out, TmdbListItem{
 			ID:               item.ID,
 			Title:            title,
-			MediaType:        mediaType,
+			MediaType:        mt,
 			PosterPath:       item.PosterPath,
 			BackdropPath:     item.BackdropPath,
 			Overview:         item.Overview,

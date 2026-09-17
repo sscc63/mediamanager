@@ -9,10 +9,10 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"runtime/debug"
 	"strconv"
 	"time"
 
+	"mmbot/internal/gcguard"
 	"mmbot/internal/mediawarp"
 	"mmbot/internal/pan123"
 	"mmbot/internal/strm"
@@ -321,9 +321,12 @@ func (s *Server) handleEmbyStatus(w http.ResponseWriter, r *http.Request) {
 		"scan_error":  rt.ScanError,
 	})
 	// 查重结果只为本次响应服务；避免主进程长期持有整个重复文件明细。
+	// ClearScanResult 之后这批明细才真正变成垃圾，此时才适合主动回收。
+	// 回收按全进程统一节流（见 internal/gcguard）：本接口前端每 2 秒轮询一次，
+	// 不节流等于每 2 秒强制一次 STW GC，RSS 被反复打到低位再涨回来。
 	if hasResult {
 		rt.ClearScanResult()
-		debug.FreeOSMemory()
+		gcguard.Reclaim()
 	}
 }
 

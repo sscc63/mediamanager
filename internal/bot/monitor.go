@@ -4,6 +4,7 @@ package bot
 // 职责：抓取 t.me/s/{channel} 页面 → 解析消息 → 过滤匹配 → 转存（分享/秒传）→ 记录数据库。
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -13,10 +14,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/html"
 
+	"mmbot/internal/gcguard"
 	"mmbot/internal/httpx"
 	"mmbot/internal/transfer"
 	_ "modernc.org/sqlite"
@@ -50,11 +53,36 @@ var reBracketContent = regexp.MustCompile(`[（(【\[][^）)】\]\n]*[）)】\]]
 var reTailWord = regexp.MustCompile(`(已更新|更新|连载|更新至|HDTV|高清|第\d+[季集]|全集)$`)
 var reChannelType = regexp.MustCompile(`类型[:：]\s*([^，,\n]+)`)
 
-// NewMessageDB 打开/创建消息记录数据库。
+// reVideoMark 影视标记（🎬/🎥/🎞/📽/🎦）：bot 型频道把片名写在带这个标记的那一行。
+var reVideoMark = regexp.MustCompile(`[\x{1F3AC}\x{1F3A5}\x{1F39E}\x{1F4FD}\x{1F3A6}]`)
+
+// reProgress 更新进度标记（更新至第05集 / 全30集 / 第12话）。
+// 与 reTailWord 的区别：后者只匹配行尾，而「🎬 更新至第05集 繁花 (2023)」这种把进度
+// 写在片名前面的消息漏不掉，识别出的标题会带上「更新至第05集」，TMDB 必然搜不到。
+// 只剥「集/话/期」，不碰「第N季」—— 季数对剧集识别是有用信息。
+var reProgress = regexp.MustCompile(`(?:已)?更新(?:至)?\s*第?\s*\d+\s*(?:-\s*\d+)?\s*[集话期]|全\s*\d+\s*[集话期]|第\s*\d+\s*[集话期]`)
+
+// messageDBMu / messageDBCache 同一路径共用一个实例，且随进程常驻。
+//
+// 必须复用而不能每次新建：database/sql 的 connectionOpener goroutine 会一直持有 *sql.DB，
+// 不调用 Close 就永远不会被回收 —— 每个未关闭的实例常驻 1 个 goroutine + 1 条 sqlite 连接
+// （含其 page cache，实测约 170KB），并且一直占着数据库文件句柄。
+// 「频道更新」接口每打开一次页面就调一次 NewMessageDB，原先等于按访问次数无界泄漏。
+var (
+	messageDBMu    sync.Mutex
+	messageDBCache = map[string]*MessageDB{}
+)
+
+// NewMessageDB 打开/创建消息记录数据库；同一路径复用同一实例。
 func NewMessageDB(dbPath string) *MessageDB {
 	if dbPath == "" {
 		// 与 mem_history.json / user_states.db 一致，放在挂载的 data/ 目录以持久化去重记录
 		dbPath = filepath.Join("data", "TG_monitor-123.db")
+	}
+	messageDBMu.Lock()
+	defer messageDBMu.Unlock()
+	if m, ok := messageDBCache[dbPath]; ok {
+		return m
 	}
 	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
 		_ = os.MkdirAll(dir, 0o755)
@@ -63,8 +91,9 @@ func NewMessageDB(dbPath string) *MessageDB {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		log.Printf("[监控] 打开消息数据库失败: %v", err)
-		return m
+		return m // 打开失败不缓存，下次调用重试
 	}
+	applySQLiteLimits(db)
 	m.db = db
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS messages (
 		msg_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,12 +107,16 @@ func NewMessageDB(dbPath string) *MessageDB {
 		media_title TEXT,
 		media_year TEXT,
 		media_type TEXT,
-		recognized_at TEXT)`)
+		recognized_at TEXT,
+		target_pid INTEGER)`)
 	// 兼容旧库：补齐标题相关列
 	m.ensureColumn("media_title", "TEXT")
 	m.ensureColumn("media_year", "TEXT")
 	m.ensureColumn("media_type", "TEXT")
 	m.ensureColumn("recognized_at", "TEXT")
+	// 扫描时算好的目标目录（含 ENV_SECOND_FILTER 二次过滤结果），供「立即入库」复用
+	m.ensureColumn("target_pid", "INTEGER")
+	messageDBCache[dbPath] = m
 	return m
 }
 
@@ -92,24 +125,37 @@ func (m *MessageDB) ensureColumn(col, ddl string) {
 	if m == nil || m.db == nil {
 		return
 	}
-	rows, err := m.db.Query("PRAGMA table_info(messages)")
-	if err != nil {
+	// 必须先放掉 PRAGMA 查询占用的连接再执行 ALTER：SetMaxOpenConns(1) 下，
+	// rows 还开着时 Exec 拿不到连接，会永久阻塞。
+	if m.hasColumn(col) {
 		return
 	}
+	_, _ = m.db.Exec(fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", col, ddl))
+}
+
+// hasColumn 查询 messages 表是否已有该列；返回前关闭 rows 以释放连接。
+func (m *MessageDB) hasColumn(col string) bool {
+	rows, err := m.db.Query("PRAGMA table_info(messages)")
+	if err != nil {
+		return false
+	}
 	defer rows.Close()
+	// PRAGMA table_info 的列顺序是 cid, name, type, notnull, dflt_value, pk。
+	// 原先把 dflt_value 扫进了 int 的 pk：没有 DEFAULT 的列 dflt_value 是 NULL，
+	// Scan 直接报错被 continue 掉，导致本函数对任何列都返回 false ——
+	// 迁移逻辑于是每次启动都重跑一遍 ALTER（错误被丢弃所以一直没暴露）。
 	for rows.Next() {
-		var cid int
+		var cid, notnull, pk int
 		var name, typ string
-		var notnull, pk int
 		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &pk, &dflt); err != nil {
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
 			continue
 		}
 		if name == col {
-			return
+			return true
 		}
 	}
-	_, _ = m.db.Exec(fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", col, ddl))
+	return false
 }
 
 // IsProcessed 检查消息是否已处理（无论转存是否成功）。
@@ -122,16 +168,17 @@ func (m *MessageDB) IsProcessed(messageURL string) bool {
 	return err == nil
 }
 
-// Save 记录/更新消息处理结果。
-func (m *MessageDB) Save(messageID, date, messageURL, targetURL, title, year, mtype, status, result string) {
+// Save 记录/更新消息处理结果。targetPID 是本次扫描为该消息算出的目标目录，
+// 落库供「立即入库」复用，保证手动与自动落到同一目录。
+func (m *MessageDB) Save(messageID, date, messageURL, targetURL, title, year, mtype, status, result string, targetPID int) {
 	if m == nil || m.db == nil || messageURL == "" {
 		return
 	}
 	now := time.Now().Format("2006-01-02T15:04:05")
 	// 与 Python 原版一致：纯 INSERT（id 非唯一约束，去重由调用方 IsProcessed 按 message_url 判断）
-	_, err := m.db.Exec(`INSERT INTO messages (id, date, message_url, target_url, transfer_status, transfer_time, transfer_result, media_title, media_year, media_type, recognized_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		messageID, date, messageURL, targetURL, status, now, result, title, year, mtype, now)
+	_, err := m.db.Exec(`INSERT INTO messages (id, date, message_url, target_url, transfer_status, transfer_time, transfer_result, media_title, media_year, media_type, recognized_at, target_pid)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		messageID, date, messageURL, targetURL, status, now, result, title, year, mtype, now, targetPID)
 	if err != nil {
 		log.Printf("[监控] 保存消息记录失败: %v", err)
 	}
@@ -145,12 +192,13 @@ type ChannelRecent struct {
 	MessageURL   string
 	TransferTime string
 	TargetURL    string
+	TargetPID    int
 }
 
 // ListRecentWithTitle 查询近 hours 小时内、已识别出标题的频道消息（按时间倒序）。
 // 用于首页/订阅探索页展示「频道更新」片单。
 func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
-	if m == nil || m.db == nil || m.db == nil {
+	if m == nil || m.db == nil {
 		return nil
 	}
 	if hours <= 0 {
@@ -160,7 +208,7 @@ func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
 		limit = 30
 	}
 	since := time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15:04:05")
-	rows, err := m.db.Query(`SELECT media_title, COALESCE(media_year,''), COALESCE(media_type,''), message_url, transfer_time, target_url
+	rows, err := m.db.Query(`SELECT media_title, COALESCE(media_year,''), COALESCE(media_type,''), message_url, transfer_time, target_url, COALESCE(target_pid,0)
 		FROM messages WHERE media_title <> '' AND recognized_at >= ?
 		ORDER BY transfer_time DESC LIMIT ?`, since, limit)
 	if err != nil {
@@ -171,12 +219,28 @@ func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
 	var out []ChannelRecent
 	for rows.Next() {
 		var c ChannelRecent
-		if err := rows.Scan(&c.Title, &c.Year, &c.Type, &c.MessageURL, &c.TransferTime, &c.TargetURL); err != nil {
+		if err := rows.Scan(&c.Title, &c.Year, &c.Type, &c.MessageURL, &c.TransferTime, &c.TargetURL, &c.TargetPID); err != nil {
 			continue
 		}
 		out = append(out, c)
 	}
 	return out
+}
+
+// TargetPIDByURL 按分享链接反查扫描时算好的目标目录（已含二次过滤结果），查不到返回 0。
+// 供「立即入库」复用自动监控的目录决策：同一条链接不该因为手动触发就落到别的目录。
+func (m *MessageDB) TargetPIDByURL(targetURL string) int {
+	if m == nil || m.db == nil || targetURL == "" {
+		return 0
+	}
+	var pid int
+	err := m.db.QueryRow(`SELECT COALESCE(target_pid,0) FROM messages
+		WHERE target_url = ? AND COALESCE(target_pid,0) > 0
+		ORDER BY transfer_time DESC, msg_id DESC LIMIT 1`, targetURL).Scan(&pid)
+	if err != nil {
+		return 0
+	}
+	return pid
 }
 
 // Cleanup 清理 retention 天前的历史记录（对应 cleanup_db）。
@@ -192,6 +256,24 @@ func (m *MessageDB) Cleanup(retentionDays int) {
 	if err == nil {
 		if n, _ := res.RowsAffected(); n > 0 {
 			log.Printf("[监控] 已清理 %d 条 %d 天前的消息记录", n, retentionDays)
+		}
+	}
+}
+
+// CleanupRecentHours 删除超过指定小时数的频道消息记录（按识别时间 recognized_at 判定）。
+// 与 Cleanup 的区别：以识别时间为准，能覆盖未转存成功（transfer_time 为空）的已识别条目。
+func (m *MessageDB) CleanupRecentHours(hours int) {
+	if m == nil || m.db == nil {
+		return
+	}
+	if hours <= 0 {
+		hours = 24
+	}
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15:04:05")
+	res, err := m.db.Exec("DELETE FROM messages WHERE recognized_at <> '' AND recognized_at < ?", cutoff)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			log.Printf("[监控] 已清理 %d 条 %d 小时前的频道消息记录", n, hours)
 		}
 	}
 }
@@ -220,8 +302,9 @@ func fetchChannelMessages(channelURL string) []ChannelMessage {
 }
 
 // parseTgmeMessages 解析 t.me/s/ 页面的消息块（div.tgme_widget_message）。
+// 用 bytes.NewReader 直接吃原始字节：频道页动辄几百 KB，string(body) 会再复制一整份。
 func parseTgmeMessages(body []byte) []ChannelMessage {
-	doc, err := html.Parse(strings.NewReader(string(body)))
+	doc, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		log.Printf("[监控] 解析频道 HTML 失败: %v", err)
 		return nil
@@ -352,6 +435,19 @@ func matchSecondFilter(text string, rules []secondFilterRule, defaultID int) int
 	return defaultID
 }
 
+// checkChannelSafe 包一层 panic 兜底再调用 checkChannel。
+// checkChannel 解析的是外部抓来的 HTML，越界/空指针都可能发生；而它的两个调用方
+// （StartMonitor 主循环、TriggerCheck 手动检查）都在独立 goroutine 中，
+// 未 recover 的 panic 会直接终止整个进程。兜住之后最坏只是放弃本轮扫描。
+func (b *Bot) checkChannelSafe() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[监控] 频道扫描异常: %v", r)
+		}
+	}()
+	b.checkChannel()
+}
+
 // checkChannel 单次频道检查：抓取全部配置频道并处理未处理消息。
 // 返回处理的消息数。
 func (b *Bot) checkChannel() int {
@@ -368,10 +464,8 @@ func (b *Bot) checkChannel() int {
 	excludeFilter := b.env.Get("ENV_EXCLUDE_FILTER", "")
 	secondRules := parseSecondFilters(b.env.Get("ENV_SECOND_FILTER", ""))
 	defaultPID := b.env.GetInt("ENV_123_UPLOAD_PID", 0)
+	// 单例实例与 Web 侧共用，这里不能 Close，否则会把正在被使用的连接关掉
 	msgDB := NewMessageDB("")
-	if msgDB.db != nil {
-		defer msgDB.db.Close()
-	}
 
 	processed := 0
 	for _, channelURL := range channelURLs {
@@ -419,21 +513,23 @@ func (b *Bot) checkChannel() int {
 
 // processChannelMessage 处理单条频道消息：过滤 → 二次过滤 → 转存 → 记录。
 func (b *Bot) processChannelMessage(cm ChannelMessage, msgDB *MessageDB, excludeFilter string, secondRules []secondFilterRule, defaultPID int) {
+	// 目标目录在过滤判断之前就算好：不管这条消息最终转存与否，都要随记录落库，
+	// 这样用户在「频道更新」里点「立即入库」时才能复用同一个目录决策。
+	transferID := matchSecondFilter(cm.MessageText, secondRules, defaultPID)
 	// 过滤条件匹配（消息标题/链接命中任一过滤词）
 	if !b.filterMatch(cm.TargetURL, cm.MessageText) {
-		b.recordChannelResult(cm, msgDB, "未转存", fmt.Sprintf("未匹配过滤条件（%s），跳过转存", b.Filter()))
+		b.recordChannelResult(cm, msgDB, "未转存", fmt.Sprintf("未匹配过滤条件（%s），跳过转存", b.Filter()), transferID)
 		time.Sleep(1 * time.Second)
 		return
 	}
 	// 排除关键词
 	if excludeFilter != "" && (strings.Contains(cm.TargetURL, excludeFilter) || strings.Contains(cm.MessageText, excludeFilter)) {
-		b.recordChannelResult(cm, msgDB, "未转存", fmt.Sprintf("包含排除关键词（%s），跳过转存", excludeFilter))
+		b.recordChannelResult(cm, msgDB, "未转存", fmt.Sprintf("包含排除关键词（%s），跳过转存", excludeFilter), transferID)
 		time.Sleep(1 * time.Second)
 		return
 	}
 
 	log.Printf("[监控] 消息匹配过滤条件（%s），开始转存...", b.Filter())
-	transferID := matchSecondFilter(cm.MessageText, secondRules, defaultPID)
 
 	if cm.TargetURL != "" {
 		if b.transferSharedLinkOptimize(cm.TargetURL, transferID) {
@@ -441,11 +537,11 @@ func (b *Bot) processChannelMessage(cm ChannelMessage, msgDB *MessageDB, exclude
 			msg := fmt.Sprintf("📡 监控到『<a href=\"%s\">%s</a>』已转存✅", cm.MessageURL, htmlEscape(title))
 			b.SubmitSend(func() { b.SendMessage(msg) })
 			b.triggerTransferAfterSave(transferID)
-			b.recordChannelResult(cm, msgDB, "转存成功", msg)
+			b.recordChannelResult(cm, msgDB, "转存成功", msg, transferID)
 		} else {
 			msg := fmt.Sprintf("❌123云盘转存失败\n消息内容: %s\n链接: %s", cm.MessageURL, cm.TargetURL)
 			b.SubmitSend(func() { b.SendMessage(msg) })
-			b.recordChannelResult(cm, msgDB, "转存失败", msg)
+			b.recordChannelResult(cm, msgDB, "转存失败", msg, transferID)
 		}
 		// 与秒传分支对齐：每条分享链接转存后间隔 10 秒，避免触发 123pan 账号级限流
 		time.Sleep(10 * time.Second)
@@ -465,13 +561,13 @@ func (b *Bot) processChannelMessage(cm ChannelMessage, msgDB *MessageDB, exclude
 			msg := "✅123云盘秒传链接转存成功\n消息内容: " + cm.MessageURL + "\n"
 			b.SubmitSend(func() { b.SendMessage(msg) })
 			b.triggerTransferAfterSave(transferID)
-			b.recordChannelResult(cm, msgDB, "转存成功", msg)
+			b.recordChannelResult(cm, msgDB, "转存成功", msg, transferID)
 		} else {
 			msg := "❌123云盘秒传链接转存失败\n消息内容: " + cm.MessageURL + "\n"
-			b.recordChannelResult(cm, msgDB, "转存失败", msg)
+			b.recordChannelResult(cm, msgDB, "转存失败", msg, transferID)
 		}
 	} else {
-		b.recordChannelResult(cm, msgDB, "转存失败", "❌123云盘秒传链接转存失败\n消息内容: "+cm.MessageURL)
+		b.recordChannelResult(cm, msgDB, "转存失败", "❌123云盘秒传链接转存失败\n消息内容: "+cm.MessageURL, transferID)
 	}
 	time.Sleep(10 * time.Second)
 }
@@ -494,10 +590,10 @@ func (b *Bot) saveShareLinkLink(link string, targetPID int) bool {
 	return s > 0
 }
 
-// recordChannelResult 记录频道消息处理结果。
-func (b *Bot) recordChannelResult(cm ChannelMessage, msgDB *MessageDB, status, result string) {
+// recordChannelResult 记录频道消息处理结果；targetPID 一并落库，供「立即入库」复用。
+func (b *Bot) recordChannelResult(cm ChannelMessage, msgDB *MessageDB, status, result string, targetPID int) {
 	title, year, mtype := recognizeChannelTitle(cm.MessageText)
-	msgDB.Save(cm.MessageID, cm.DateStr, cm.MessageURL, cm.TargetURL, title, year, mtype, status, result)
+	msgDB.Save(cm.MessageID, cm.DateStr, cm.MessageURL, cm.TargetURL, title, year, mtype, status, result, targetPID)
 	log.Printf("[监控] 已记录: %s | %s | 状态: %s | 标题: %s", cm.MessageID, cm.TargetURL, status, title)
 }
 
@@ -511,7 +607,9 @@ func recognizeChannelTitle(text string) (title, year, mtype string) {
 	mtype = channelTypeFromText(text) // 优先用消息自带的「类型：X剧/X电影」字段
 	idx := reChannelMeta.FindStringSubmatchIndex(text)
 	if idx != nil {
-		year = text[idx[2]:idx[3]]
+		if y, err := strconv.Atoi(text[idx[2]:idx[3]]); err == nil && saneYear(y) > 0 {
+			year = text[idx[2]:idx[3]]
+		}
 		pre := text[:idx[0]]
 		title = channelCleanHead(channelLastLine(pre))
 		if title == "" {
@@ -521,13 +619,21 @@ func recognizeChannelTitle(text string) (title, year, mtype string) {
 			return
 		}
 	}
-	meta := transfer.Recognize(text, "", nil)
-	title = strings.TrimSpace(meta.Name)
+	// 回退：把「片名所在的那一行」交给文件名识别器，而不是整段消息文本。
+	// transfer.Recognize 是给单个文件名设计的，多行消息里的 emoji、「类型：X剧」、分享链接
+	// 会被一并当成标题残留（实测标题会变成 "🎬 某剧 已更新 🔗 https://..."），年份还会从
+	// 链接里的 4 位数字被抓成 1234。先挑行缩小范围，再用 channelCleanHead 双重收口。
+	line := channelPickTitleLine(text)
+	if line == "" {
+		line = text
+	}
+	meta := transfer.Recognize(line, "", nil)
+	title = channelCleanHead(meta.Name)
 	if title == "" {
 		return
 	}
-	if meta.Year > 0 {
-		year = strconv.Itoa(meta.Year)
+	if y := saneYear(meta.Year); y > 0 {
+		year = strconv.Itoa(y)
 	}
 	if mtype == "" {
 		switch {
@@ -556,6 +662,52 @@ func channelTypeFromText(text string) string {
 	return ""
 }
 
+// saneYear 过滤不可能的年份：识别器会把分享链接里的 4 位数字（如 Abcd-1234）当成
+// 年份，实测会输出 1234。超出合理范围的一律丢弃，避免污染 TMDB 年份匹配与前端展示。
+func saneYear(y int) int {
+	if y < 1900 || y > time.Now().Year()+2 {
+		return 0
+	}
+	return y
+}
+
+// channelLineIsMeta 判断一行是不是元信息（类型 / 更新进度 / 链接 / 提取码 / 简介），
+// 而不是片名行。宁可漏滤也不要错滤：挑不出行时调用方会退回整段文本，
+// 最坏等于修复前的行为，不会更差。
+func channelLineIsMeta(s string) bool {
+	if reLink.MatchString(s) || reChannelType.MatchString(s) {
+		return true
+	}
+	for _, kw := range []string{"提取码", "链接", "地址", "简介", "豆瓣", "评分"} {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// channelPickTitleLine 从消息文本里挑出最可能承载片名的那一行。
+//
+// 为什么需要它：reChannelMeta 只认括号里的年份，消息里没有「(YYYY)」时旧代码会把
+// 整段消息喂给 transfer.Recognize（那是给文件名用的），emoji、「类型：X剧」、分享链接
+// 全都变成标题残留。优先取带影视标记（🎬 等）的那一行；都没有标记时退回最后一个
+// 非元信息行（与 channelLastLine 的取向一致）。
+func channelPickTitleLine(text string) string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")
+	fallback := ""
+	for _, ln := range lines {
+		s := strings.TrimSpace(ln)
+		if s == "" || channelLineIsMeta(s) {
+			continue
+		}
+		if reVideoMark.MatchString(s) {
+			return s
+		}
+		fallback = s
+	}
+	return fallback
+}
+
 // channelLastLine 取文本最后一个非空行（通常即「🎬 片名 已更新」所在行）。
 func channelLastLine(pre string) string {
 	pre = strings.ReplaceAll(pre, "\r", "")
@@ -575,15 +727,28 @@ func channelCleanHead(s string) string {
 	s = strings.ReplaceAll(s, "\u200b", "")
 	s = strings.ReplaceAll(s, "\u00a0", " ")
 	s = reBracketContent.ReplaceAllString(s, " ")
+	s = reProgress.ReplaceAllString(s, " ")
 	s = reTailWord.ReplaceAllString(s, "")
 	s = strings.Join(strings.Fields(s), " ")
 	return strings.Trim(s, " ·:：,，。、-—_&/")
 }
 
 // RestoreTransferLink 将「频道更新」里的某条 123 分享链接立即转存入库。
-// 供 /api/monitor/transfer 调用（长按菜单「入库」）。转存成功/失败自带 TG 通知与去重跳过。
+// 供 /api/monitor/transfer 调用（长按菜单「入库」）。
+//
+// 目标目录与自动监控保持一致：按 target_url 反查扫描时算好的目录（已含 ENV_SECOND_FILTER
+// 二次过滤结果），这样同一条分享链接不管走自动还是手动，都落到同一个地方。
+// 查不到记录（老库、或链接不来自频道）才退回 ENV_123_UPLOAD_PID（监控转存目录）——
+// 不能退回 ENV_123_LINK_UPLOAD_PID，那是 TG 里直接贴链接转存那一族用的目录。
+//
+// 注意：这条路径【没有去重】。自动监控那条路靠 IsProcessed 拦重复，这里没有；
+// transferSharedLinkOptimize 只负责转存，失败才发 TG，成功仅写日志。
+// 所以前端必须自己防连点（见 index.html 的 _chTransferBusy），否则会重复转存两份。
 func (b *Bot) RestoreTransferLink(url string) bool {
-	pid := b.env.GetInt("ENV_123_LINK_UPLOAD_PID", 0)
+	pid := NewMessageDB("").TargetPIDByURL(url)
+	if pid <= 0 {
+		pid = b.env.GetInt("ENV_123_UPLOAD_PID", 0)
+	}
 	if !b.transferSharedLinkOptimize(url, pid) {
 		return false
 	}
@@ -622,7 +787,7 @@ func (b *Bot) StartMonitor() {
 			b.monitorMu.Lock()
 			b.monitorScanning = true
 			b.monitorMu.Unlock()
-			b.checkChannel()
+			b.checkChannelSafe()
 			b.monitorScanMu.Unlock()
 			b.monitorMu.Lock()
 			b.monitorScanning = false
@@ -635,9 +800,16 @@ func (b *Bot) StartMonitor() {
 			b.monitorMu.Unlock()
 			// 每日清理数据库记录
 			if time.Since(lastCleanup) >= 24*time.Hour {
-				NewMessageDB("").Cleanup(b.env.GetInt("ENV_DB_RETENTION_DAYS", 30))
+				edb := NewMessageDB("")
+				edb.Cleanup(b.env.GetInt("ENV_DB_RETENTION_DAYS", 30))
+				edb.CleanupRecentHours(24) // 频道更新记录保留 24 小时
 				lastCleanup = time.Now()
 			}
+			// 一轮扫描的任务边界：此时频道页正文、消息列表、识别中间结果都已随 checkChannel
+			// 返回而失去引用，主动回收一次，避免这些临时大对象长期抬高容器 RSS。
+			// 必须放在调用方而不是 checkChannel 内部 —— 函数尚未返回时它的局部变量仍然存活，
+			// 那样等于回收不到东西，只白付一次 STW 的代价。
+			gcguard.Reclaim()
 			log.Printf("[监控] 休息%d分钟...", interval)
 			select {
 			case <-b.ctx.Done():
@@ -666,11 +838,15 @@ func (b *Bot) TriggerCheck() bool {
 		return false
 	}
 	go func() {
+		// defer 是后进先出：先注册 Reclaim、后注册 Unlock，实际执行顺序就是先放扫描锁、
+		// 再回收内存。回收期间不能占着 monitorScanMu，否则用户点「立即检查」会因
+		// TryLock 失败而被误报成「已有扫描在进行」。
+		defer gcguard.Reclaim()
 		defer b.monitorScanMu.Unlock()
 		b.monitorMu.Lock()
 		b.monitorScanning = true
 		b.monitorMu.Unlock()
-		b.checkChannel()
+		b.checkChannelSafe()
 		b.monitorMu.Lock()
 		b.monitorScanning = false
 		b.monitorLast = time.Now()

@@ -14,7 +14,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
+	"mmbot/internal/gcguard"
 	"mmbot/internal/pan123"
 )
 
@@ -98,6 +100,13 @@ type TransferExecutor struct {
 	// 目标目录文件列表缓存（任务级，有上限防止内存峰值）
 	targetListingCache    map[int64][]pan123.FileInfo
 	targetListingCacheMax int
+
+	// cacheMu 保护上面两个缓存。
+	// 它们挂在共享的 executor 上，而访问来自多个 goroutine：后台整理任务
+	// （转存后自动整理 / 调度器 / 频道监控触发的批量整理）与 Web 的单文件整理
+	// （web/transfer.go 每个 HTTP 请求一个 goroutine）会并发访问。
+	// 无锁时并发写 map 是 fatal error: concurrent map writes —— 不可 recover，进程直接退出。
+	cacheMu sync.Mutex
 }
 
 // ExecutorConfig 执行器配置。
@@ -298,7 +307,10 @@ func SetDeleteOldVersionCallback(fn DeleteOldVersionFn) {
 
 // trashOldVersion 删除旧版本文件（优先使用回调完整四件套，兜底仅网盘回收站 + 整理历史）。
 func (e *TransferExecutor) trashOldVersion(ctx context.Context, oldFileID, oldTargetPath string) {
-	e.targetListingCache = map[int64][]pan123.FileInfo{}
+	// 旧版本被删掉后目标目录列表就过期了，这里沿用原有的「整批清空」策略（不动语义），
+	// 只是改成加锁访问。注意本函数是在 TransferFile 的批量循环中途按文件调用的，
+	// 整批任务中途会反复丢缓存 —— 这是既有的性能问题，另议。
+	e.cacheResetListing()
 	if deleteOldVersion != nil {
 		deleteOldVersion(ctx, oldFileID, oldTargetPath, e.History)
 		return
@@ -662,7 +674,21 @@ func (e *TransferExecutor) moveFile(ctx context.Context, fileID, oldName, newNam
 }
 
 // TransferDirectory 整理整个目录（遍历 + 批量整理）。
+//
+// 这是整理任务唯一的对外入口，也负责在顶层任务结束时主动回收内存。
+// 内部实现里 targetListingCache 是任务级缓存（最多 500 个目录的完整文件列表，是整批任务的
+// 内存大头），由 transferDirectory 的 defer 置 nil —— 必须等它返回之后再回收，否则缓存还挂在
+// e 上，等于白回收。递归子目录（dirNames 非空）不回收，避免每层目录都触发一次 STW GC。
 func (e *TransferExecutor) TransferDirectory(ctx context.Context, sourcePID int, recursive, force bool, scrape *bool, transferType string, sendNotify bool, dirNames []string) *TransferStats {
+	stats := e.transferDirectory(ctx, sourcePID, recursive, force, scrape, transferType, sendNotify, dirNames)
+	if len(dirNames) == 0 {
+		gcguard.Reclaim()
+	}
+	return stats
+}
+
+// transferDirectory 整理目录的实际实现；递归调用自身，不触发内存回收。
+func (e *TransferExecutor) transferDirectory(ctx context.Context, sourcePID int, recursive, force bool, scrape *bool, transferType string, sendNotify bool, dirNames []string) *TransferStats {
 	stats := &TransferStats{Groups: map[groupKey]*GroupSummary{}, Moved: map[string]bool{}}
 	if e.Client == nil {
 		log.Printf("整理目录失败: 123 客户端未初始化 (source_pid=%d)", sourcePID)
@@ -671,8 +697,8 @@ func (e *TransferExecutor) TransferDirectory(ctx context.Context, sourcePID int,
 	}
 	// 任务级缓存只在顶层任务创建和释放，避免长时间持有目录列表。
 	if len(dirNames) == 0 {
-		e.targetListingCache = map[int64][]pan123.FileInfo{}
-		defer func() { e.targetListingCache = nil }()
+		e.cacheResetListing()
+		defer e.cacheReleaseListing()
 	}
 	log.Printf("开始整理目录: source_pid=%d, recursive=%v", sourcePID, recursive)
 
@@ -691,7 +717,7 @@ func (e *TransferExecutor) TransferDirectory(ctx context.Context, sourcePID int,
 		// 目录：递归
 		if item.Type == 1 && recursive {
 			subNames := append(append([]string{}, dirNames...), itemName)
-			subStats := e.TransferDirectory(ctx, int(item.FileID), recursive, force, scrape, transferType, false, subNames)
+			subStats := e.transferDirectory(ctx, int(item.FileID), recursive, force, scrape, transferType, false, subNames)
 			stats.Success += subStats.Success
 			stats.Fail += subStats.Fail
 			stats.Skip += subStats.Skip
@@ -763,7 +789,8 @@ func (e *TransferExecutor) TransferDirectory(ctx context.Context, sourcePID int,
 
 // TransferFileByID 根据 file_id 整理（自动获取文件名）。
 func (e *TransferExecutor) TransferFileByID(ctx context.Context, fileID string, sourcePID int, force bool) TransferResult {
-	e.targetListingCache = map[int64][]pan123.FileInfo{}
+	// 单文件整理自带一份干净的目录列表缓存；加锁是因为后台批量整理可能同时在跑。
+	e.cacheResetListing()
 	detail, err := e.Client.FSDetail(ctx, fileID)
 	if err != nil {
 		return TransferResult{Message: fmt.Sprintf("获取文件详情失败: %v", err), FileID: fileID}
@@ -1172,19 +1199,19 @@ func (e *TransferExecutor) sendSkipNotifications(stats *TransferStats) {
 // ensureDirs 递归创建目录，返回最深层目录 ID。
 func (e *TransferExecutor) ensureDirs(ctx context.Context, rootPID int, dirParts []string) (int, error) {
 	currentPID := rootPID
-	if len(e.dirPIDCache) > e.dirPIDCacheMax {
-		e.dirPIDCache = map[string]int{}
-	}
+	e.cacheResetDirPIDIfFull()
 	for _, part := range dirParts {
 		cacheKey := fmt.Sprintf("%d|%s", currentPID, part)
-		if cached, ok := e.dirPIDCache[cacheKey]; ok {
+		if cached, ok := e.cacheGetDirPID(cacheKey); ok {
 			currentPID = cached
 			continue
 		}
+		// 注意：下面 findSubdir / FSMkdir 都是网络调用，缓存锁必须在进循环前就放开，
+		// 不能把锁持到整个循环外面。
 		existing, err := e.findSubdir(ctx, currentPID, part)
 		if err == nil && existing > 0 {
 			currentPID = existing
-			e.dirPIDCache[cacheKey] = existing
+			e.cachePutDirPID(cacheKey, existing)
 		} else {
 			resp, err := e.Client.FSMkdir(ctx, part, currentPID, 1)
 			if err != nil {
@@ -1198,7 +1225,7 @@ func (e *TransferExecutor) ensureDirs(ctx context.Context, rootPID int, dirParts
 				return 0, err
 			}
 			currentPID = newID
-			e.dirPIDCache[cacheKey] = newID
+			e.cachePutDirPID(cacheKey, newID)
 			log.Printf("创建目录: %s -> ID: %d", part, newID)
 		}
 	}
@@ -1219,9 +1246,79 @@ func (e *TransferExecutor) findSubdir(ctx context.Context, parentPID int, name s
 	return 0, nil
 }
 
+// ============ 任务级缓存的加锁访问 ============
+//
+// 下面这组方法把 targetListingCache / dirPIDCache 的所有读写收敛到一处并统一加锁。
+// 缓存挂在共享的 executor 上，后台整理任务与 Web 单文件整理会并发访问：
+// 无锁时并发写 map 是 fatal error: concurrent map writes（不可 recover，进程直接退出）。
+// 每个方法内部只做 map 操作，绝不在持锁时调用网络接口。
+
+// cacheResetListing 换一份空的目录列表缓存（顶层任务开始 / 单文件整理开始 / 旧版本删除后）。
+func (e *TransferExecutor) cacheResetListing() {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+	e.targetListingCache = map[int64][]pan123.FileInfo{}
+}
+
+// cacheReleaseListing 顶层任务结束时释放目录列表缓存，让这批大对象能被随后的回收带走。
+func (e *TransferExecutor) cacheReleaseListing() {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+	e.targetListingCache = nil
+}
+
+// cacheGetListing 读目录列表缓存。
+func (e *TransferExecutor) cacheGetListing(pid int64) ([]pan123.FileInfo, bool) {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+	items, ok := e.targetListingCache[pid]
+	return items, ok
+}
+
+// cachePutListing 写目录列表缓存；超容量只停止缓存、不淘汰（沿用原策略）。
+// 必须做 nil 兜底：顶层任务结束时缓存会被置 nil，此时 Web 侧并发发起单文件整理，
+// 直接赋值会 panic: assignment to entry in nil map。
+func (e *TransferExecutor) cachePutListing(pid int64, items []pan123.FileInfo) {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+	if e.targetListingCache == nil {
+		e.targetListingCache = map[int64][]pan123.FileInfo{}
+	}
+	if len(e.targetListingCache) < e.targetListingCacheMax {
+		e.targetListingCache[pid] = items
+	}
+}
+
+// cacheResetDirPIDIfFull 目录 PID 缓存超出上限时整体清空（沿用原策略，不做淘汰）。
+func (e *TransferExecutor) cacheResetDirPIDIfFull() {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+	if len(e.dirPIDCache) > e.dirPIDCacheMax {
+		e.dirPIDCache = map[string]int{}
+	}
+}
+
+// cacheGetDirPID 读目录 PID 缓存。
+func (e *TransferExecutor) cacheGetDirPID(key string) (int, bool) {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+	pid, ok := e.dirPIDCache[key]
+	return pid, ok
+}
+
+// cachePutDirPID 写目录 PID 缓存。
+func (e *TransferExecutor) cachePutDirPID(key string, pid int) {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+	if e.dirPIDCache == nil {
+		e.dirPIDCache = map[string]int{}
+	}
+	e.dirPIDCache[key] = pid
+}
+
 // listTargetDir 目标目录文件列表（任务级缓存）。
 func (e *TransferExecutor) listTargetDir(ctx context.Context, pid int64) []pan123.FileInfo {
-	if items, ok := e.targetListingCache[pid]; ok {
+	if items, ok := e.cacheGetListing(pid); ok {
 		return items
 	}
 	items, err := e.Client.FSList(ctx, pid)
@@ -1229,9 +1326,7 @@ func (e *TransferExecutor) listTargetDir(ctx context.Context, pid int64) []pan12
 		return nil
 	}
 	// 容量上限保护：超出时不再缓存，避免任务级内存峰值
-	if len(e.targetListingCache) < e.targetListingCacheMax {
-		e.targetListingCache[pid] = items
-	}
+	e.cachePutListing(pid, items)
 	return items
 }
 
