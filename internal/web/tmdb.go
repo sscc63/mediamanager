@@ -238,9 +238,12 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 		var items []transfer.TmdbListItem
 		switch {
 		case hybrid:
-			items = client.SearchMediaHybrid(query, 30)
+			// 20 而不是 30：TMDB 每页正好 20 条，getListMultiPage 在凑够 limit 前会一直翻页
+			//（最多 2 页）。给 30 就必然要打第 2 页 —— 每次搜索白白多一次上游请求，
+			// 前端也多铺 10 张海报图（每张一次 image.tmdb.org 请求）。给 20 刚好一页收工。
+			items = client.SearchMediaHybrid(query, 20)
 		case query != "":
-			items = client.SearchMedia(query, mediaType, 30)
+			items = client.SearchMedia(query, mediaType, 20)
 		case category == "trending":
 			items = client.GetTrending(mediaType, timeWindow)
 		case category == "now_playing":
