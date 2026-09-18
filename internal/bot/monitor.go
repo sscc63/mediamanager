@@ -760,10 +760,15 @@ func channelLastLine(pre string) string {
 
 // channelCleanHead 清洗片名候选：去前导标签/emoji/链接/括号内容/「已更新」等尾词与首尾符号。
 func channelCleanHead(s string) string {
-	// 前导标签最先剥：「剧集：成也萧河 (2026)」要先变成「成也萧河 (2026)」，
+	// emoji 必须先于前导标签剥离：reChannelLabel 锚定行首（^\s*），而 bot 型频道把片名
+	// 写在带影视标记的那一行（「🎬 剧集：牧神记 (2024) 已更新」），且 channelPickTitleLine
+	// 正是优先挑这种带标记的行。emoji 挡在标签前面时 ^\s* 匹配不到，标签会原样残留成
+	// 「剧集：牧神记」——拿去搜 TMDB 必然搜不到，接口每次都白打一遍搜索。
+	// reEmoji 含 U+3000（全角空格）并替换为半角空格，正好让 ^\s* 吃得到。
+	s = reEmoji.ReplaceAllString(s, " ")
+	// 前导标签紧随其后剥：「剧集：成也萧河 (2026)」要先变成「成也萧河 (2026)」，
 	// 后面 reBracketContent 才会把 (2026) 也一并去掉。放在最后剥则年份已被吃掉了。
 	s = reChannelLabel.ReplaceAllString(s, "")
-	s = reEmoji.ReplaceAllString(s, " ")
 	s = reLink.ReplaceAllString(s, " ")
 	s = strings.ReplaceAll(s, "\u200b", "")
 	s = strings.ReplaceAll(s, "\u00a0", " ")
