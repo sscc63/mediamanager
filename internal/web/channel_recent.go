@@ -35,6 +35,8 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 	limit := intQuery(r, "limit", 30)
 
 	msgDB := bot.NewMessageDB("")
+	// 实时删除超过 24 小时(默认窗口)的频道消息，避免过期条目堆积；删除后本次即不再返回
+	msgDB.CleanupRecentHours(channelRecentHours)
 	rows := msgDB.ListRecentWithTitle(hours, limit)
 
 	// TMDB 未配置时只回标题（前端用占位海报）
@@ -63,13 +65,19 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 			"target_url":    c.TargetURL,
 		}
 		if client != nil {
-			if hit := channelSearchFirst(client, c.Title, c.Year, c.Type); hit != nil {
+			if c.TmdbID > 0 {
+				// 库内已持久化：直接读回，不再实时搜索（首次命中时已固化）
+				item["tmdb_id"] = c.TmdbID
+				item["poster_path"] = c.PosterPath
+			} else if hit := channelSearchFirst(client, c.Title, c.Year, c.Type); hit != nil {
 				item["tmdb_id"] = hit.ID
 				item["poster_path"] = hit.PosterPath
 				// 一律采用命中结果自带的类型：tmdb_id 与类型必须配对，否则前端会拿
 				// /movie/<剧集id> 去查详情（电影与剧的 id 是两套独立空间），显示成无关作品。
 				// 识别出的类型为空时 channelSearchFirst 是 movie+tv 都搜，命中很可能是剧集。
 				item["media_type"] = hit.MediaType
+				// 写回库实现持久化：下次直接读库，且 24h 清理整行删除即随之过期
+				msgDB.UpdateTMDBColumns(c.MessageURL, hit.ID, hit.PosterPath)
 			} else {
 				// 识别/匹配失败（找不到对应 TMDB 条目）：不返回，避免在前端展示无海报的「幽灵」占位。
 				// 这类记录堆积在 24h 窗口里只会让海报墙越拉越长且大多是识别错的标题。

@@ -133,6 +133,9 @@ func NewMessageDB(dbPath string) *MessageDB {
 	m.ensureColumn("recognized_at", "TEXT")
 	// 扫描时算好的目标目录（含 ENV_SECOND_FILTER 二次过滤结果），供「立即入库」复用
 	m.ensureColumn("target_pid", "INTEGER")
+	// 频道更新 TMDB 持久化：查询首次命中后写回，之后直接读库不再实时搜；随 24h 清理整行删除
+	m.ensureColumn("tmdb_id", "INTEGER")
+	m.ensureColumn("poster_path", "TEXT")
 	messageDBCache[dbPath] = m
 	return m
 }
@@ -201,7 +204,7 @@ func (m *MessageDB) Save(messageID, date, messageURL, targetURL, title, year, mt
 	}
 }
 
-// ChannelRecent 频道近期更新影视（一条消息一行，含识别标题）。
+// ChannelRecent 频道近期更新影视（一条消息一行，含识别标题与持久化的 TMDB 映射）。
 type ChannelRecent struct {
 	Title        string
 	Year         string
@@ -210,6 +213,8 @@ type ChannelRecent struct {
 	TransferTime string
 	TargetURL    string
 	TargetPID    int
+	TmdbID       int
+	PosterPath   string
 }
 
 // ListRecentWithTitle 查询近 hours 小时内、已识别出标题的频道消息（按时间倒序）。
@@ -225,7 +230,7 @@ func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
 		limit = 30
 	}
 	since := time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15:04:05")
-	rows, err := m.db.Query(`SELECT media_title, COALESCE(media_year,''), COALESCE(media_type,''), message_url, transfer_time, target_url, COALESCE(target_pid,0)
+	rows, err := m.db.Query(`SELECT media_title, COALESCE(media_year,''), COALESCE(media_type,''), message_url, transfer_time, target_url, COALESCE(target_pid,0), COALESCE(tmdb_id,0), COALESCE(poster_path,'')
 		FROM messages WHERE media_title <> '' AND recognized_at >= ?
 		ORDER BY transfer_time DESC LIMIT ?`, since, limit)
 	if err != nil {
@@ -236,12 +241,28 @@ func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
 	var out []ChannelRecent
 	for rows.Next() {
 		var c ChannelRecent
-		if err := rows.Scan(&c.Title, &c.Year, &c.Type, &c.MessageURL, &c.TransferTime, &c.TargetURL, &c.TargetPID); err != nil {
+		if err := rows.Scan(&c.Title, &c.Year, &c.Type, &c.MessageURL, &c.TransferTime, &c.TargetURL, &c.TargetPID, &c.TmdbID, &c.PosterPath); err != nil {
 			continue
 		}
 		out = append(out, c)
 	}
 	return out
+}
+
+// UpdateTMDBColumns 把 TMDB 匹配结果写回对应频道消息，实现持久化（首次命中即固化，
+// 后续查询直接读库）。以 message_url 定位（与 IsProcessed 去重一致）。
+func (m *MessageDB) UpdateTMDBColumns(messageURL string, tmdbID int, posterPath string) {
+	if m == nil || m.db == nil || messageURL == "" {
+		return
+	}
+	if tmdbID <= 0 {
+		return
+	}
+	_, err := m.db.Exec(`UPDATE messages SET tmdb_id = ?, poster_path = ? WHERE message_url = ?`,
+		tmdbID, posterPath, messageURL)
+	if err != nil {
+		log.Printf("[监控] 写回 TMDB 映射失败: %v", err)
+	}
 }
 
 // TargetPIDByURL 按分享链接反查扫描时算好的目标目录（已含二次过滤结果），查不到返回 0。
