@@ -1,9 +1,28 @@
 name: build-push-dockerhub
 
+# 触发条件收紧：只在真正影响镜像产物的文件变化时构建。
+# 此前是「任何 push 到 main 都构建」—— 改个 README、记忆文件、文档也会跑一次
+# 完整的多架构构建（实测单次中位 11.3 分钟）。2026-09 一个月跑了 202 次共 2170 分钟，
+# 超出私有仓库 2000 分钟/月的免费额度。paths 过滤把纯文档类提交挡在门外。
 on:
   push:
     branches: [main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - 'templates/**'
+      - 'static/**'
+      - 'templete.env'
+      - '.github/workflows/docker-push.yml'
   workflow_dispatch:
+
+# 同一分支的多次连续推送只保留最新一次构建：前一次尚未跑完就直接取消。
+# 避免「连续提交 5 次 = 排队跑 5 次完整构建」的浪费（每次都因 tag 相同而互相覆盖产物）。
+concurrency:
+  group: docker-push-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-push:
@@ -37,3 +56,8 @@ jobs:
           tags: |
             ssccing/mediamanager:latest
             ssccing/mediamanager:${{ steps.date.outputs.tag }}
+          # 跨构建层缓存：把 builder 阶段的 Go 依赖与编译产物缓存到 Actions 缓存，
+          # 下次构建用 cache-from 命中，可跳过 go mod download 与未变更依赖的编译。
+          # mode=max 才会缓存中间阶段（默认 min 只留最终镜像层，builder 阶段全丢）。
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
