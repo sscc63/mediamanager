@@ -3088,15 +3088,16 @@
             setTmdbView('calendar');
             switchTab('tmdb');
         }
-        // 首页「频道更新」横滑条：近 180 分钟频道监控识别出的影视（TMDB 补海报）
+        // 首页「频道更新」横滑条：近 24 小时频道监控识别出的影视（TMDB 补海报）
+        const CHANNEL_RECENT_HOURS = 24;   // 与后端 channelRecentHours 保持一致
         async function loadChannelRank(trackId) {
             const track = document.getElementById(trackId);
             if (!track) return;
             track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载中...</div>';
             try {
-                const d = await api('/api/monitor/recent?hours=180&limit=20');
+                const d = await api('/api/monitor/recent?hours=' + CHANNEL_RECENT_HOURS + '&limit=20');
                 const raw = (d && d.items ? d.items : []);
-                if (!raw.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">近 180 分钟暂无频道更新</div>'; return; }
+                if (!raw.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">近 24 小时暂无频道更新</div>'; return; }
                 track.innerHTML = raw.slice(0, 20).map((it) => {
                     const url = it.poster_path ? `https://image.tmdb.org/t/p/w342${it.poster_path}` : '';
                     const payload = encodeURIComponent(JSON.stringify({ id: it.tmdb_id || 0, type: it.media_type || 'movie', title: it.title, release_date: it.year ? it.year + '-01-01' : '', poster_path: it.poster_path, backdrop_path: '' }));
@@ -3124,15 +3125,16 @@
             _refreshToolbarTitle();
             switchTab('tmdb');
         }
-        // 频道更新视图：近 180 分钟频道监控识别出的影视，海报网格展示（复用榜单卡片，点击进详情）
+        // 频道更新视图：近 24 小时频道监控识别出的影视，海报网格展示（复用榜单卡片，点击进详情）
+        // 超过 24 小时的旧消息不再铺出来 —— 频道内容是更新/连载性质，过期项只会让海报墙越积越长
         async function showChannelUpdates() {
             const content = document.getElementById('tmdb-content');
             if (!content) return;
             content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">加载中...</div>';
             try {
-                const d = await api('/api/monitor/recent?hours=180&limit=200');
+                const d = await api('/api/monitor/recent?hours=' + CHANNEL_RECENT_HOURS + '&limit=200');
                 const items = (d && d.items ? d.items : []);
-                if (!items.length) { content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">近 180 分钟暂无频道更新</div>'; return; }
+                if (!items.length) { content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">近 24 小时暂无频道更新</div>'; return; }
                 content.innerHTML = `<div class="tmdb-grid">${items.map(channelCardHtml).join('')}</div>`;
             } catch (e) {
                 content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">频道更新加载失败</div>';

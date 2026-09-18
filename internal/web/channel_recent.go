@@ -14,9 +14,24 @@ import (
 	"mmbot/internal/transfer"
 )
 
-// handleChannelRecent GET /api/monitor/recent?hours=3&limit=30
+// channelRecentHours 频道更新默认展示窗口：近 24 小时。
+//
+// 频道消息是「更新/连载」性质的，超过一天的基本已经被后续集数顶下去了，
+// 留着只会让海报墙越积越长、且多为过期集。窗口统一在服务端兜底（见 handleChannelRecent），
+// 前端传什么都不会超出这个上限，避免以后有人改前端参数又把过期内容放回来。
+const channelRecentHours = 24
+
+// channelRecentMaxHours 前端可请求的最大窗口。留一点余量给「看更久以前的更新」这类需求，
+// 但不能无限放大 —— 该接口每条都要打一次 TMDB 搜索补海报。
+const channelRecentMaxHours = 72
+
+// handleChannelRecent GET /api/monitor/recent?hours=24&limit=30
+// hours 默认 24（见 channelRecentHours），超过 channelRecentMaxHours 会被夹到上限。
 func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
-	hours := intQuery(r, "hours", 3)
+	hours := intQuery(r, "hours", channelRecentHours)
+	if hours > channelRecentMaxHours {
+		hours = channelRecentMaxHours
+	}
 	limit := intQuery(r, "limit", 30)
 
 	msgDB := bot.NewMessageDB("")
