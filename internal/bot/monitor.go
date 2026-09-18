@@ -53,6 +53,17 @@ var reBracketContent = regexp.MustCompile(`[（(【\[][^）)】\]\n]*[）)】\]]
 var reTailWord = regexp.MustCompile(`(已更新|更新|连载|更新至|HDTV|高清|第\d+[季集]|全集)$`)
 var reChannelType = regexp.MustCompile(`类型[:：]\s*([^，,\n]+)`)
 
+// reChannelLabel 片名前的前导内容标签（「剧集：成也萧河 (2026)」「电影：A子计划 (2026)」）。
+//
+// shareme123pan 这类频道的首行格式是「<标签>：<片名> (<年份>) <SxxExx>」，标签是频道自己
+// 加的归类词而不是片名的一部分。channelCleanHead 只 Trim 首尾的「：」，标签在中间削不掉，
+// 于是识别出的标题变成「剧集：成也萧河」，拿去搜 TMDB 必然搜不到（频道更新里显示为
+// 匹配不到 TMDB 的占位卡，或者匹配到风马牛不相及的作品）。
+//
+// 必须锚定在行首（^\s*）且限定这几个词：像「名侦探柯南：独眼的残像」「流浪地球：飞跃2020特别版」
+// 这种标题自带的冒号绝不能被削。允许「剧集 :」这种冒号前带空格、以及「剧集:」半角冒号的变体。
+var reChannelLabel = regexp.MustCompile(`^\s*(剧集|电影|动漫|综艺|纪录片|动画|电视剧|美剧|英剧|日剧|韩剧|国剧|港剧|台剧)\s*[:：]\s*`)
+
 // reVideoMark 影视标记（🎬/🎥/🎞/📽/🎦）：bot 型频道把片名写在带这个标记的那一行。
 var reVideoMark = regexp.MustCompile(`[\x{1F3AC}\x{1F3A5}\x{1F39E}\x{1F4FD}\x{1F3A6}]`)
 
@@ -61,6 +72,12 @@ var reVideoMark = regexp.MustCompile(`[\x{1F3AC}\x{1F3A5}\x{1F39E}\x{1F4FD}\x{1F
 // 写在片名前面的消息漏不掉，识别出的标题会带上「更新至第05集」，TMDB 必然搜不到。
 // 只剥「集/话/期」，不碰「第N季」—— 季数对剧集识别是有用信息。
 var reProgress = regexp.MustCompile(`(?:已)?更新(?:至)?\s*第?\s*\d+\s*(?:-\s*\d+)?\s*[集话期]|全\s*\d+\s*[集话期]|第\s*\d+\s*[集话期]`)
+
+// reSeasonEpisode 季集编号（S01E09 / s2e11 / S01.E09 / 第1季第9集）。
+// shareme123pan 的首行是「剧集：成也萧河 (2026) S01E09」，reProgress 只认「第N集/话/期」，
+// 削不掉 SxxExx，于是清洗后残留「成也萧河 S01E09」。当前主路径因为在年份括号处就把字符串
+// 截断了、侥幸看不出来，但任何走到整行清洗的路径（或以后改了截断逻辑）都会把这个尾巴带进标题。
+var reSeasonEpisode = regexp.MustCompile(`(?i)\bS\s*\d{1,2}\s*[._-]?\s*E\s*\d{1,4}\b|第\s*\d+\s*季\s*第\s*\d+\s*[集话期]`)
 
 // messageDBMu / messageDBCache 同一路径共用一个实例，且随进程常驻。
 //
@@ -720,13 +737,17 @@ func channelLastLine(pre string) string {
 	return ""
 }
 
-// channelCleanHead 清洗片名候选：去 emoji/链接/括号内容/「已更新」等尾词与首尾符号。
+// channelCleanHead 清洗片名候选：去前导标签/emoji/链接/括号内容/「已更新」等尾词与首尾符号。
 func channelCleanHead(s string) string {
+	// 前导标签最先剥：「剧集：成也萧河 (2026)」要先变成「成也萧河 (2026)」，
+	// 后面 reBracketContent 才会把 (2026) 也一并去掉。放在最后剥则年份已被吃掉了。
+	s = reChannelLabel.ReplaceAllString(s, "")
 	s = reEmoji.ReplaceAllString(s, " ")
 	s = reLink.ReplaceAllString(s, " ")
 	s = strings.ReplaceAll(s, "\u200b", "")
 	s = strings.ReplaceAll(s, "\u00a0", " ")
 	s = reBracketContent.ReplaceAllString(s, " ")
+	s = reSeasonEpisode.ReplaceAllString(s, " ")
 	s = reProgress.ReplaceAllString(s, " ")
 	s = reTailWord.ReplaceAllString(s, "")
 	s = strings.Join(strings.Fields(s), " ")
