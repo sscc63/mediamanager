@@ -1868,33 +1868,11 @@
             gap: 10px;
         }
         /* ============ 详情页「资源」区块（123panfx 资源站） ============ */
-        .tmdb-res-block { margin-top: 22px; }
-        /* 标题行：左侧「资源」+ 右侧「搜索」文字按钮 */
-        .tmdb-res-head {
-            display: flex; align-items: center; justify-content: space-between;
-            gap: 10px; margin-bottom: 8px;
-        }
-        .tmdb-res-title {
-            font-size: var(--fs-subtitle);
-            font-weight: 600;
-            line-height: 1.35;
-            color: var(--text-700);
-        }
-        /* 文字按钮：无底色无描边，只有字 + 图标，hover 变主题色 */
-        .tmdb-res-search {
-            display: inline-flex; align-items: center; gap: 5px;
-            background: none; border: none; padding: 2px 0;
-            font-size: var(--fs-subtitle);
-            font-weight: 600;
-            color: var(--text-500);
-            cursor: pointer;
-            transition: color 0.18s;
-            white-space: nowrap;
-        }
-        .tmdb-res-search:hover { color: var(--primary-hover); }
-        .tmdb-res-search:disabled { color: var(--text-300); cursor: default; }
-        .tmdb-res-search .fa-spinner { animation: tmdb-res-spin 0.9s linear infinite; }
+        /* 搜索按钮已上移到「订阅」/「立即入库」同一行（见 renderTmdbDetail 的按钮行），
+           样式直接复用 .tmdb-modal-subscribe.tmdb-modal-import，此处只保留旋转动画，
+           以及资源区块自身的位置与标题样式。 */
         @keyframes tmdb-res-spin { to { transform: rotate(360deg); } }
+        .tmdb-modal-subscribe .fa-spinner { animation: tmdb-res-spin 0.9s linear infinite; }
 
         /* 条目列表 */
         .tmdb-res-list { display: flex; flex-direction: column; gap: 6px; }
@@ -3523,6 +3501,7 @@
                     <div style="display:flex;justify-content:center;gap:12px;margin-top:22px;flex-wrap:wrap;">
                         <button class="tmdb-modal-subscribe tmdb-modal-import${isTmdbSubscribed(mainTitle) ? ' subscribed' : ''}" data-title="${escapeHtml(mainTitle)}" onclick="subscribeTmdb(this.dataset.title, this)" title="${isTmdbSubscribed(mainTitle) ? '点击取消订阅' : '添加到频道监控选择关键词'}"><i class="fas fa-bell"></i> ${isTmdbSubscribed(mainTitle) ? '已订阅' : '订阅'}</button>
                         ${_channelTargetURL ? '<button class="tmdb-modal-subscribe tmdb-modal-import" onclick="channelDetailTransfer()" title="将当前频道分享链接立即转存到库"><i class="fas fa-download"></i> 立即入库</button>' : ''}
+                        ${resSearchBtnHtml(mainTitle, year)}
                     </div>
                     ${renderResBlock(mainTitle, year)}
                 </div>`;
@@ -3543,19 +3522,20 @@
         // 最近一次搜索的条目，按 tid 索引 —— 解锁按钮要靠它回填链接区
         let _resItems = {};
 
+        // 搜索按钮：放在「订阅」/「立即入库」同一行，样式与它们完全一致（描边式按钮），图标放大镜。
+        // 没有标题时不渲染（与 renderResBlock 的空返回保持一致）。
+        function resSearchBtnHtml(title, year) {
+            const kw = (title || '').trim();
+            if (!kw) return '';
+            return `<button class="tmdb-modal-subscribe tmdb-modal-import" data-kw="${escapeHtml(kw)}" data-year="${escapeHtml(year || '')}" onclick="searchRes(this)" title="在 123 资源站搜索该影视的资源（只读搜索，不会发帖）"><i class="fas fa-magnifying-glass"></i> 搜索资源</button>`;
+        }
+
         function renderResBlock(title, year) {
             // 每次进详情都是全新一块：清掉上一部片的条目缓存，避免解锁回填串到别的片
             _resItems = {};
             const kw = (title || '').trim();
             if (!kw) return '';
-            const yearHint = year ? `<span style="color:var(--text-400);font-weight:400;"> · ${escapeHtml(year)}</span>` : '';
             return `<div class="tmdb-res-block">
-                <div class="tmdb-res-head">
-                    <span class="tmdb-res-title">资源${yearHint}</span>
-                    <button class="tmdb-res-search" data-kw="${escapeHtml(kw)}" data-year="${escapeHtml(year || '')}" onclick="searchRes(this)" title="在 123 资源站搜索该影视的资源（只读搜索，不会发帖）">
-                        <i class="fas fa-magnifying-glass"></i> 搜索
-                    </button>
-                </div>
                 <div class="tmdb-res-list" id="tmdb-res-list"></div>
             </div>`;
         }
@@ -3584,7 +3564,7 @@
                 list.innerHTML = `<div class="tmdb-res-note error">搜索失败：${escapeHtml(e.message || '请求失败')}</div>`;
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-magnifying-glass"></i> 搜索';
+                btn.innerHTML = '<i class="fas fa-magnifying-glass"></i> 搜索资源';
             }
         }
 
