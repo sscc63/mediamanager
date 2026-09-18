@@ -2924,32 +2924,8 @@
             });
         }
 
-        // 移动端左右滑动切换视图（TMDB榜单 → 已订阅 → 追剧日历，到头不循环）
-        (function () {
-            const box = document.getElementById('tab-tmdb') || document.getElementById('tmdb-content');
-            if (!box) return;
-            const ORDER = ['list', 'maoyan', 'subscribed', 'calendar', 'channel'];
-            let sx = 0, sy = 0, st = 0, se = null;
-            box.addEventListener('touchstart', e => {
-                se = e.touches.length === 1 ? e.target : null;
-                if (!se) return;
-                sx = e.touches[0].clientX;
-                sy = e.touches[0].clientY;
-                st = Date.now();
-            }, { passive: true });
-            box.addEventListener('touchend', e => {
-                const t = e.changedTouches[0];
-                if (!t || !se || Date.now() - st > 600) return;
-                if (se.closest('.tmdb-dstrip-scroll')) return;   // 日期条内横滑归它自己滚动
-                const dx = t.clientX - sx, dy = t.clientY - sy;
-                // 横向位移需明显大于纵向，避免与页面上下滚动冲突
-                if (Math.abs(dx) < 30 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-                const i = ORDER.indexOf(_tmdbView);
-                if (i < 0) return;
-                const next = ORDER[dx < 0 ? i + 1 : i - 1];   // 左滑下一个，右滑上一个
-                if (next) setTmdbView(next);
-            }, { passive: true });
-        })();
+        // 订阅探索页子视图切换手势：全部禁用左右滑切页,
+        // 各视图只能通过标题「全部」> 和控件进入，避免列表内误触切页。
 
         // 订阅探索子视图标题：细分 4 类（TMDB热门电影/电视剧、国产热门电影/电视剧）
         function _tmdbTitle(view) {
@@ -3050,9 +3026,17 @@
         function openTrendRankMore() { gotoTmdbTrend('movie'); }
         function openTrendRankMoreTv() { gotoTmdbTrend('tv'); }
         function gotoTmdbTrend(mediaType) {
-            setTmdbType(mediaType);
-            setTmdbCategory('trending');
-            setTmdbTimeWindow('day');
+            // 关键：先复位视图为榜单列表，避免上次停在 已订阅/追剧日历/猫眼/频道更新
+            // 时 _tmdbView 残留旧值，导致标题/内容串到其它页面。
+            _tmdbView = 'list';
+            _tmdbType = mediaType;
+            _tmdbCategory = 'trending';
+            _tmdbQuery = '';
+            _tmdbTimeWindow = 'day';
+            _refreshToolbarTitle();
+            // 这里不要 loadTmdb()：switchTab('tmdb') 内部就会走 renderTmdbView() → loadTmdb()
+            //（见 switchTab 里「每次进入都按当前视图重载」那段）。两处都调等于点一次「›」
+            // 打两次 /api/tmdb —— 正好抵消掉本轮把三个 setter 合并成直接赋值的省请求收益。
             switchTab('tmdb');
         }
         // 猫眼电视剧热度榜：数据来自 /api/maoyan?view=tv，item 结构同 TMDB 列表项
@@ -3080,14 +3064,20 @@
             }
         }
         // 「>」打开完整猫眼电视剧榜单页
+        // 与 gotoTmdbTrend 同理：setTmdbView / setMaoyanView 内部都会立即取数
+        //（setTmdbView → renderTmdbView → loadMaoyan；setMaoyanView → loadMaoyan），
+        // 再加上 switchTab('tmdb') 里的 renderTmdbView，点一次「›」会连打三次 /api/maoyan。
+        // 所以这里只赋值 + 刷标题，取数统一交给 switchTab('tmdb') 内那一次。
         function gotoMaoyanTv() {
-            setTmdbView('maoyan');
-            setMaoyanView('tv');
+            _tmdbView = 'maoyan';
+            _maoyanView = 'tv';
+            _refreshToolbarTitle();
             switchTab('tmdb');
         }
         function gotoMaoyanMovie() {
-            setTmdbView('maoyan');
-            setMaoyanView('movie');
+            _tmdbView = 'maoyan';
+            _maoyanView = 'movie';
+            _refreshToolbarTitle();
             switchTab('tmdb');
         }
         function gotoSubscribed() {
@@ -3128,8 +3118,10 @@
             openTrendRankItem(el);
         }
         // 「>」进入订阅探索页「频道更新」视图（完整海报网格）
+        // 同 gotoMaoyanTv：setTmdbView 会先取一次数，switchTab 里还会再取一次，只保留后者
         function gotoChannelUpdates() {
-            setTmdbView('channel');
+            _tmdbView = 'channel';
+            _refreshToolbarTitle();
             switchTab('tmdb');
         }
         // 频道更新视图：近 180 分钟频道监控识别出的影视，海报网格展示（复用榜单卡片，点击进详情）
