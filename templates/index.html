@@ -1175,6 +1175,29 @@
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
+        /* ============ 统一加载指示器（inline） ============ */
+        /* 静态「加载中...」文字升级为旋转环形图标。纯 CSS、无外部依赖、不额外发请求。
+           与 .spinner 的分工：.spinner 是全屏遮罩（#loading）里 40px 居中大圆环，
+           本类则是贴在文字前的 inline 小图标（横滑条 14px / 全屏占位 22px），随文字基线对齐。
+           两者共用同一个 @keyframes spin，不重复定义关键帧。
+           border-top/right 透明 + 其余 currentColor，形成缺口圆弧；currentColor 让它自动跟随
+           父级文字颜色（横滑条的弱化灰、全屏占位的白色都能直接用）。 */
+        ._spin {
+            display: inline-block;
+            box-sizing: border-box;
+            vertical-align: -2px;
+            border-style: solid;
+            border-color: currentColor;
+            border-top-color: transparent;
+            border-right-color: transparent;
+            border-radius: 50%;
+            opacity: .85;
+            animation: spin .7s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            ._spin { animation-duration: 2s; }
+        }
+
         /* ============ 配置卡片网格（小卡片样式，浅蓝底色） ============ */
         .cfg-grid {
             display: grid;
@@ -2141,7 +2164,7 @@
                                 后台任务
                             </div>
                             <div id="bg-tasks-grid">
-                                <div style="color: var(--text-400); padding: 12px 0;">加载中...</div>
+                                <div style="color: var(--text-400); padding: 12px 0;"><span class="_spin" style="width:14px;height:14px;border-width:2px;"></span><span style="margin-left:8px;">加载中</span></div>
                             </div>
                         </div>
                     </div>
@@ -3060,11 +3083,43 @@
         // 取一次数据 → 过滤掉无海报的条目 → 铺成横滑海报条。差异只有数据源 URL
         // 与条目字段的取名，所以抽成一个 loader，调用方只负责传 URL 和字段映射。
         const _RANK_PLACEHOLDER = 'color:var(--text-400);padding:14px 4px;font-size:12px;';
-        function _rankMsg(text) { return `<div style="${_RANK_PLACEHOLDER}">${text}</div>`; }
+
+        // ============ 统一加载指示器 ============
+        // 静态的「加载中...」文字换成旋转环形图标：纯 CSS 动画（样式见 <head> 里的 ._spin），
+        // 无外部依赖、不额外发请求。样式写在静态 <style> 里而不是这里注入，是因为首屏
+        // 「后台任务」的初始 HTML 也要用，运行时注入会来不及。
+        // 之所以做成自动识别，是因为占位文案散落在 12+ 处调用点（榜单条 / 频道更新 / 详情弹窗 /
+        // 任务列表 / 观看数据 …），逐个改容易漏；统一在这里按文案判断，一处生效全局覆盖。
+        // size 默认 14px，在横滑条（12px 字号）与全屏占位（大留白）里都能看；颜色随 currentColor 走。
+        function _spinner(size) {
+            const s = size || 14;
+            return `<span class="_spin" style="width:${s}px;height:${s}px;border-width:${s >= 20 ? 3 : 2}px;"></span>`;
+        }
+        // 判断是否为「加载中」类文案：中文「加载中」/ 英文 loading，兼容带省略号的各种写法
+        function _isLoadingText(text) {
+            const t = String(text == null ? '' : text).trim();
+            return /^加载中[.．。…]*$/.test(t) || /^loading[.\u2026]*$/i.test(t);
+        }
+        // 加载态：图标 + 文案（文案可为空，此时只显示图标）
+        function _loaderHtml(text, size) {
+            const label = text ? `<span style="margin-left:8px;">${text}</span>` : '';
+            return `<span style="display:inline-flex;align-items:center;">${_spinner(size)}${label}</span>`;
+        }
+
+        function _rankMsg(text) {
+            const inner = _isLoadingText(text) ? _loaderHtml('加载中') : text;
+            return `<div style="${_RANK_PLACEHOLDER}">${inner}</div>`;
+        }
         // 全屏内容区（订阅探索 / 频道更新 / 追剧日历 / 趋势榜容器）的占位：居中、深色弱化文字、上下留白 40px。
         // 加载中 / 暂无数据 / 加载失败 等都复用同一段样式，原来内联字符串复制了 12+ 处。
+        // 其中「加载中」自动升级为旋转图标 + 文案，空文案则只留图标（用于骨架位置更紧凑的场景）。
         const _CONTENT_PLACEHOLDER_STYLE = 'color:#fff;padding:40px;text-align:center;';
-        function _contentPlaceholder(text) { return `<div style="${_CONTENT_PLACEHOLDER_STYLE}">${text}</div>`; }
+        function _contentPlaceholder(text) {
+            const inner = (text === '' || text === undefined || text === null)
+                ? _loaderHtml('', 22)
+                : (_isLoadingText(text) ? _loaderHtml('加载中', 22) : text);
+            return `<div style="${_CONTENT_PLACEHOLDER_STYLE}">${inner}</div>`;
+        }
 
         // loadedMap：按 trackId 记忆「已加载」，避免切换页面时重复打接口
         // toPayload：把上游条目映射成 openTmdbDetail 需要的字段
@@ -4919,7 +4974,7 @@
         async function loadHistory(page, silent) {
             if (page) historyPage = page;
             const body = document.getElementById('historyBody');
-            if (!silent) body.innerHTML = `<div class="empty-row">加载中...</div>`;
+            if (!silent) body.innerHTML = `<div class="empty-row">${_loaderHtml('加载中')}</div>`;
             try {
                 const kw = historyKeyword.trim();
                 const r = await api(`/api/transfer/history?page=${historyPage}&size=${HISTORY_SIZE}&keyword=${encodeURIComponent(kw)}`);
@@ -5478,7 +5533,7 @@
             const grid = document.getElementById('bg-tasks-grid');
             if (!grid) return;
             if (!force && !_bgLoaded) {
-                if (grid.innerHTML.trim() === '') grid.innerHTML = '<div style="color: var(--text-400); padding: 12px 0;">加载中...</div>';
+                if (grid.innerHTML.trim() === '') grid.innerHTML = `<div style="color: var(--text-400); padding: 12px 0;">${_loaderHtml('加载中')}</div>`;
             }
             try {
                 _bgTasks = await api('/api/tasks/status');
@@ -5753,7 +5808,7 @@
 
         async function showEmbyUsageDay(userId, userName, date) {
             const overlay = openOverlay('emby-usage-overlay',
-                '<div class="tmdb-modal-body" style="text-align:center;padding:40px;">加载中...</div>');
+                `<div class="tmdb-modal-body" style="text-align:center;padding:40px;color:#fff;">${_loaderHtml('加载中', 22)}</div>`);
             const body = overlay.querySelector('.tmdb-modal-body');
             try {
                 const data = await api(`/api/emby/usage/detail?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}`);
