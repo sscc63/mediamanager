@@ -84,16 +84,20 @@
                 inset: -70px;
                 z-index: 0;
                 pointer-events: none;
-                background-image:
-                    var(--hero-bg, none);
-                background-size: cover;
+                /* 不透明底色 + 海报叠图：海报尚未解码时 background-image 是「有声明无像素」，
+                   透明底会直接露出页面白色底 —— 叠一层深色基底，最坏情况也只是暗一下，不会闪白。 */
+                background-color: #0c0c10;
+                background-image: var(--hero-bg, none);
+                background-size: cover, cover;
                 background-position: center top;
+                background-repeat: no-repeat;
                 filter: blur(34px) saturate(1.05);
                 opacity: .35;
                 -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
                 mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-                transition: opacity .28s ease;
+                transition: opacity .16s ease;
                 transform: translateZ(0);
+                will-change: opacity;
             }
             body.hero-bg-changing::before { opacity: 0; }
             body:has(#tab-system.active) .content {
@@ -709,16 +713,20 @@
                 inset: -70px;
                 z-index: 0;
                 pointer-events: none;
+                background-color: #0c0c10;
                 background-image: var(--hero-bg, none);
-                background-size: cover;
+                background-size: cover, cover;
                 background-position: center top;
+                background-repeat: no-repeat;
                 filter: blur(34px) saturate(1.05);
                 opacity: .35;
                 -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
                 mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-                transition: opacity .28s ease;
+                transition: opacity .16s ease;
                 transform: translateZ(0);
+                will-change: opacity;
             }
+            body.hero-bg-changing::before { opacity: 0; }
             body:has(#tab-system.active) .content { position: relative; z-index: 1; }
             body:has(#tab-system.active) .toolbar-icon-btn {
                 color: #fff;
@@ -764,7 +772,9 @@
             inset: 0;
             opacity: 0;
             pointer-events: none;
-            transition: opacity .45s ease;
+            /* .45s 太长：中间有将近半秒是「旧图已淡出、新图还没出来」的窗口期。
+               图已预解码的情况下 .22s 足够顺滑，观感上也更像「切」而不是「闪」 */
+            transition: opacity .22s ease;
         }
         #tab-system .entry-carousel .entry-card.active {
             opacity: 1;
@@ -1398,9 +1408,11 @@
             /* 移动端：订阅海报改为顶栏下方、竖向 2:3 纯海报；出血方式与之前一致（全宽出血铺满、无圆角、cover 裁切） */
             /* 移动端：底层用无字海报超大模糊，视觉摊平成主色调纯色层 */
             body::before {
+                background-color: #0c0c10;
                 background-image: var(--hero-bg, none);
-                background-size: cover;
+                background-size: cover, cover;
                 background-position: center;
+                background-repeat: no-repeat;
                 filter: blur(56px) saturate(1.15);
                 opacity: 1;
                 -webkit-mask-image: none;
@@ -3443,15 +3455,35 @@
         function _entryImgSrc(i) {
             return `https://image.tmdb.org/t/p/w1280${i.backdrop_path || i.poster_path}`;
         }
+        // 大图预解码：先让浏览器把图拉完并解码，再挂到 DOM / --hero-bg 上。
+        // 不预热的话，换图那一刻新图还没解码完 —— 卡面旧海报已淡出、新海报还没画出来，
+        // 页面级的模糊英雄底同步淡出，中间那 200~400ms 露出的就是白色底，肉眼看就是「闪白一下」。
+        // decode() 返回 Promise 且不占主线程；失败/超时都照常回调，绝不把图卡死。
+        const _heroPre = new Set();
+        function _preheat(url, done) {
+            if (!url) { done && done(); return; }
+            if (_heroPre.has(url)) { done && done(); return; }
+            _heroPre.add(url);
+            if (_heroPre.size > 24) _heroPre.delete(_heroPre.values().next().value);
+            const im = new Image();
+            let fired = false;
+            const finish = () => { if (!fired) { fired = true; done && done(); } };
+            im.onload = () => { (im.decode ? im.decode().catch(() => {}) : Promise.resolve()).then(finish, finish); };
+            im.onerror = finish;
+            im.src = url;
+            setTimeout(finish, 4000);   // 兜底：网络再慢也不让切换无限期等下去
+        }
         function renderEntryPosters(items) {
             const strip = document.getElementById('tmdb-poster');
             if (!strip || !items) return;
             const filtered = items.filter(i => i.backdrop_path || i.poster_path);
             _entryPosterAll = filtered.slice(0, 10);
             _entryPosterItems = _entryPosterAll.slice();
-            _pruneEntryCardPool();
-            if (_entryPosterItems.length === 0) return;
+            if (_entryPosterItems.length === 0) { _pruneEntryCardPool([]); return; }
             _buildEntryCarousel();
+            // 裁剪放在建卡之后：先按新的存活集合把不用的卡（连同它那张大图）释放掉，
+            // 顺序反了会在建卡前就把本轮还要用的卡先删了。
+            _pruneEntryCardPool();
         }
         // 卡片元素按条目缓存复用 —— 这是输入时闪屏的主因。
         // 原先 _buildEntryCarousel 每次都用新建的 <img> 铺一遍，新元素必须重新解码
@@ -3463,10 +3495,39 @@
         function _entryCardKey(it) { return (it.media_type || 'movie') + ':' + it.id; }
         // 池子只保留当前还在用的条目：每张卡都挂着一个已解码的大图，
         // 不设界会随榜单刷新越积越多 —— 正是这一轮一直在收的内存形态。
-        function _pruneEntryCardPool() {
-            const alive = new Set(_entryPosterItems.concat(_entryPosterAll).map(_entryCardKey));
+        function _pruneEntryCardPool(aliveItems) {
+            const alive = new Set((aliveItems || _entryPosterItems.concat(_entryPosterAll)).map(_entryCardKey));
             for (const k of [..._entryCardPool.keys()]) {
-                if (!alive.has(k)) _entryCardPool.delete(k);
+                if (!alive.has(k)) {
+                    // 驱逐前把 img.src 清空：DOM 节点被 drop 后，一旦 img 还挂着 src，
+                    // 那张 original 大图（2~8MB）的解码位图就还压在内存里不释放。
+                    const c = _entryCardPool.get(k);
+                    const im = c && c.querySelector('img:not(.entry-brand)');
+                    if (im) { im.onload = null; im.src = ''; }
+                    _entryCardPool.delete(k);
+                }
+            }
+        }
+        // 同一张卡复用到另一条数据（榜单刷新后 id 顺序变了，池子里恰好又命中同一个 key）：
+        // 先预解码新图，解码完再写 src；解码期间旧图仍在位，观众看不到空白。
+        function _syncEntryCardImage(c, it) {
+            const img = c.querySelector('img:not(.entry-brand)');
+            if (!img) return;
+            // 桌面端图源可以直接算出来；手机端首帧不带图（等无字版），这里就不动 src。
+            // 注意不能把「算不出图源」和「已经是对的图」混成同一个分支 —— 手机端一旦在这里
+            // 把 heroUrl 记成空串，稍后无字版就位时写同一个 url 会被去重挡掉，图永远不出来。
+            if (window.innerWidth <= 768) {
+                const heroUrl = (it && it._heroPosterUrl) || '';
+                if (heroUrl && img.dataset.heroUrl !== heroUrl) {
+                    img.dataset.heroUrl = heroUrl;
+                    _preheat(heroUrl, () => { if (img.isConnected) img.src = heroUrl; });
+                }
+                return;
+            }
+            const url = `https://image.tmdb.org/t/p/original${(it && (it.backdrop_path || it.poster_path)) || ''}`;
+            if (!url.endsWith('/original') && img.dataset.heroUrl !== url) {
+                img.dataset.heroUrl = url;
+                _preheat(url, () => { if (img.isConnected) img.src = url; });
             }
         }
         function _entryCard(it) {
@@ -3474,11 +3535,15 @@
             if (_entryCardVertical !== vertical) { _entryCardPool.clear(); _entryCardVertical = vertical; }
             const key = _entryCardKey(it);
             const hit = _entryCardPool.get(key);
-            if (hit) return hit;
+            // 卡上记着它属于哪一条：换图时先 _preheat 新图、解码完再写 src，避免空白帧
+            if (hit) { hit._item = it; _syncEntryCardImage(hit, it); return hit; }
             const c = document.createElement('div');
             c.className = 'entry-card';
+            c._item = it;
             const img = document.createElement('img');
-            img.loading = 'lazy';
+            // 不再用 loading=lazy：非 active 的卡 opacity 为 0，但元素仍在渲染树里，
+            // lazy 会把它们的解码一路推迟；等到滑动切过去才开始解码，正好撞上淡入 —— 这就是闪白的来源。
+            // 十张图现在全部在渲染时预解码，切换时是「已解码位图直接显形」。
             img.alt = '';
             // 手机端首帧不预置带字海报，等待详情就绪后一次到位出无字版，避免「有字→无字」切换闪烁
             img.src = vertical
@@ -3509,6 +3574,14 @@
             let car = strip.querySelector('.entry-carousel');
             if (!car) { car = document.createElement('div'); car.className = 'entry-carousel'; strip.appendChild(car); }
             car.replaceChildren(..._entryPosterItems.map(_entryCard));
+            // 非 active 的卡（10 张里的 9 张）先给浏览器一点时间把位图解码出来，
+            // 滑动切过去时才是即时的。idle 里做，不跟首屏渲染抢主线程。
+            const idle = window.requestIdleCallback || (cb => setTimeout(cb, 200));
+            idle(() => _entryPosterItems.forEach((_, i) => {
+                const c = car.querySelectorAll('.entry-card')[i];
+                const im = c && c.querySelector('img:not(.entry-brand)');
+                if (im && im.decode) im.decode().catch(() => {});
+            }));
             _entryPosterIdx = 0;
             _updateEntryCarousel();
             _bindEntrySwipe(strip);
@@ -3542,9 +3615,16 @@
                     const url = r.textless
                         ? `https://image.tmdb.org/t/p/original${r.textless}`
                         : `https://image.tmdb.org/t/p/original${item.poster_path || item.backdrop_path || ''}`;
-                    const pre = new Image();
-                    pre.onload = () => { if (posterImg.isConnected) posterImg.src = url; item._heroPosterUrl = url; };
-                    pre.src = url;
+                    const wasEmpty = !posterImg.currentSrc || !posterImg.getAttribute('src');
+                    item._heroPosterUrl = url;
+                    _preheat(url, () => {
+                        if (!posterImg.isConnected) return;
+                        posterImg.src = url;
+                        // 首帧本来就空着，这里只是补上第一张图，没必要再走一次过渡
+                        if (wasEmpty) return;
+                        // 已经有图在显示（比如桌面切到手机断点后补图）：走统一的受控换底路径
+                        if (_entryPosterItems[_entryPosterIdx] === item) _updateHeroBg(url);
+                    });
                 }
                 if (metaEl && metaEl.isConnected) {
                     const tmdbTag = '<span style="display:inline-block;background:#01b4e4;color:#fff;font-size:6.5px;font-weight:700;line-height:1;padding:2px 4px;border-radius:3px;vertical-align:1px;margin-right:4px;letter-spacing:.03em">TMDB</span>';
@@ -3578,20 +3658,33 @@
             _ensureEntryDetail(_entryPosterIdx);
             _ensureEntryDetail(_entryPosterIdx + 1);   // 预取下一张，滑动时即时可见
             const item = _entryPosterItems[_entryPosterIdx];
-            if (item) {
-                const src = (window.innerWidth <= 768 && item._heroPosterUrl) || _entryImgSrc(item);
-                const nextBg = `url("${src}")`;
-                // 图没换就别再走一遍「淡出 → 180ms → 淡入」：搜索框每次重建轮播都会调到这里，
-                // 无条件过渡等于每敲一个字符让整页模糊背景闪一下。
-                if (nextBg === _heroBgCurrent) return;
-                _heroBgCurrent = nextBg;
-                document.body.classList.add('hero-bg-changing');
-                if (_heroBgTimer) clearTimeout(_heroBgTimer);
-                _heroBgTimer = setTimeout(() => {
-                    document.documentElement.style.setProperty('--hero-bg', nextBg);
-                    requestAnimationFrame(() => document.body.classList.remove('hero-bg-changing'));
-                }, 180);
-            }
+            if (item) _updateHeroBg((window.innerWidth <= 768 && item._heroPosterUrl) || _entryImgSrc(item));
+        }
+        let _heroBgSeq = 0;
+        function _updateHeroBg(src) {
+            const nextBg = `url("${src}")`;
+            // 图没换就别再走一遍「淡出 → 淡入」：搜索框每次重建轮播都会调到这里，
+            // 无条件过渡等于每敲一个字符让整页模糊背景闪一下。
+            if (nextBg === _heroBgCurrent) return;
+            _heroBgCurrent = nextBg;
+            const seq = ++_heroBgSeq;
+            // 关键：**先确认新图能画出来，再撤掉旧底**。
+            // 原先是「立刻把底淡成透明 → 等 180ms 无脑换成新 url」。那 180ms 里新图还在下载/解码，
+            // background-image 指向一张没有像素的图 = 页面露出白色底，这就是切海报时的白色闪屏。
+            // 现在按 预解码 → 换图 → 再淡入 的顺序走，中间任何一步都不会出现无像素的空窗。
+            _preheat(src, () => {
+                if (seq !== _heroBgSeq) return;      // 期间又切了下一张，本次作废
+                _paintHeroBg(nextBg);
+            });
+        }
+        function _paintHeroBg(bg) {
+            document.documentElement.style.setProperty('--hero-bg', bg);
+            // 换完背景再淡出重入一次，拿到「交叉过渡」的观感；此时新图已解码，淡入过程不会露白
+            document.body.classList.add('hero-bg-changing');
+            if (_heroBgTimer) clearTimeout(_heroBgTimer);
+            _heroBgTimer = setTimeout(() => {
+                requestAnimationFrame(() => document.body.classList.remove('hero-bg-changing'));
+            }, 60);
         }
         function _setEntryPoster(index) {
             if (!_entryPosterItems.length) return;
@@ -3616,12 +3709,24 @@
             if (!_entryPosterItems.length || _entryPosterItems.length === 1) return;
             _setEntryPoster(_entryPosterIdx + dir);
         }
+        // 当前张的左右邻居（含循环环绕）提前预热，滑动方向无论左右都已有现成位图
+        function _preheatNeighborEntry() {
+            const n = _entryPosterItems.length;
+            if (n < 2) return;
+            [_entryPosterIdx + 1, _entryPosterIdx - 1].forEach(i => {
+                const it = _entryPosterItems[((i % n) + n) % n];
+                if (it) _preheat((window.innerWidth <= 768 && it._heroPosterUrl) || _entryImgSrc(it));
+            });
+        }
         function _bindEntrySwipe(strip) {
             if (!strip || strip.dataset.swipedBound) return;
             strip.dataset.swipedBound = '1';
             strip.addEventListener('touchstart', e => {
                 if (!e.touches || !e.touches[0]) return;
                 _entryPosterTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                // 手指刚落下就把左右相邻两张的图预热掉：等 touchend 判定完方向再下载，
+                // 那 0.22s 的淡入基本全花在下载+解码上，看起来就是闪。
+                _preheatNeighborEntry();
             }, { passive: true });
             strip.addEventListener('touchend', e => {
                 const t = _entryPosterTouch; _entryPosterTouch = null;
