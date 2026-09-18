@@ -3069,24 +3069,6 @@
             if (_tmdbView === 'subscribed' || _tmdbView === 'calendar') _tmdbView = 'list';
         }
 
-        function setTmdbType(type) {
-            _tmdbType = type;
-            _refreshToolbarTitle();
-            loadTmdb();
-        }
-
-        function setTmdbCategory(category) {
-            _tmdbCategory = category;
-            _tmdbQuery = '';          // 切榜单即退出搜索模式
-            _refreshToolbarTitle();   // 标题从「搜索结果」回到「TMDB热门电影/电视剧」
-            loadTmdb();
-        }
-
-        function setTmdbTimeWindow(timeWindow) {
-            _tmdbTimeWindow = timeWindow;
-            loadTmdb();
-        }
-
         // 首页「TMDB 电影/电视剧趋势榜」：加载今日趋势前 10，渲染横滑海报条
         const _trendRankLoaded = {};
         // 同一 URL 只发一次请求。趋势榜与「订阅探索」入口海报要的是同一份 TV 趋势数据，
@@ -3098,26 +3080,40 @@
             }
             return _rankReqCache[url];
         }
-        async function loadTrendRank(mediaType, trackId) {
+        // 首页三个榜单条（TMDB 趋势 / 猫眼热度 / 频道更新）共用同一套骨架：
+        // 取一次数据 → 过滤掉无海报的条目 → 铺成横滑海报条。差异只有数据源 URL
+        // 与条目字段的取名，所以抽成一个 loader，调用方只负责传 URL 和字段映射。
+        const _RANK_PLACEHOLDER = 'color:var(--text-400);padding:14px 4px;font-size:12px;';
+        function _rankMsg(text) { return `<div style="${_RANK_PLACEHOLDER}">${text}</div>`; }
+
+        // loadedMap：按 trackId 记忆「已加载」，避免切换页面时重复打接口
+        // toPayload：把上游条目映射成 openTmdbDetail 需要的字段
+        async function _loadRankTrack(trackId, loadedMap, url, toPayload) {
             const track = document.getElementById(trackId);
-            if (!track || _trendRankLoaded[trackId]) return;
-            _trendRankLoaded[trackId] = true;
-            track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载中...</div>';
+            if (!track || loadedMap[trackId]) return;
+            loadedMap[trackId] = true;
+            track.innerHTML = _rankMsg('加载中...');
             try {
-                const d = await fetchRankOnce('/api/tmdb?category=trending&type=' + mediaType + '&time_window=day');
+                const d = await fetchRankOnce(url);
                 const items = (d && d.items ? d.items : []).filter(i => i.poster_path).slice(0, 10);
-                if (!items.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">暂无数据</div>'; return; }
+                if (!items.length) { track.innerHTML = _rankMsg('暂无数据'); return; }
                 track.innerHTML = items.map((it, idx) => {
-                    const url = `https://image.tmdb.org/t/p/w780${it.poster_path}`;
-                    const payload = encodeURIComponent(JSON.stringify({ id: it.id, type: mediaType, title: it.title || it.name, release_date: it.release_date || it.first_air_date || '', poster_path: it.poster_path, backdrop_path: it.backdrop_path || '' }));
+                    const url_ = `https://image.tmdb.org/t/p/w780${it.poster_path}`;
+                    const payload = encodeURIComponent(JSON.stringify(toPayload(it)));
                     return `<div class="trend-rank-item" data-payload="${payload}" onclick="openTrendRankItem(this)">
                         <span class="trend-rank-num">${idx + 1}</span>
-                        <img class="poster" loading="lazy" src="${url}" alt="poster" onerror="this.style.visibility='hidden'">
+                        <img class="poster" loading="lazy" src="${url_}" alt="poster" onerror="this.style.visibility='hidden'">
                     </div>`;
                 }).join('');
             } catch (e) {
-                track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载失败</div>';
+                track.innerHTML = _rankMsg('加载失败');
             }
+        }
+
+        async function loadTrendRank(mediaType, trackId) {
+            await _loadRankTrack(trackId, _trendRankLoaded,
+                '/api/tmdb?category=trending&type=' + mediaType + '&time_window=day',
+                it => ({ id: it.id, type: mediaType, title: it.title || it.name, release_date: it.release_date || it.first_air_date || '', poster_path: it.poster_path, backdrop_path: it.backdrop_path || '' }));
         }
         function openTrendRankItem(el) {
             let item;
@@ -3142,38 +3138,21 @@
             _refreshToolbarTitle();
             // 这里不要 loadTmdb()：switchTab('tmdb') 内部就会走 renderTmdbView() → loadTmdb()
             //（见 switchTab 里「每次进入都按当前视图重载」那段）。两处都调等于点一次「›」
-            // 打两次 /api/tmdb —— 正好抵消掉本轮把三个 setter 合并成直接赋值的省请求收益。
+            // 打两次 /api/tmdb。
             switchTab('tmdb');
         }
         // 猫眼电视剧热度榜：数据来自 /api/maoyan?view=tv，item 结构同 TMDB 列表项
         const _maoyanRankLoaded = {};
         async function loadMaoyanRank(trackId, view) {
             const v = view || 'tv';
-            const track = document.getElementById(trackId);
-            if (!track || _maoyanRankLoaded[trackId]) return;
-            _maoyanRankLoaded[trackId] = true;
-            track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载中...</div>';
-            try {
-                const d = await fetchRankOnce('/api/maoyan?view=' + v);
-                const items = (d && d.items ? d.items : []).filter(i => i.poster_path).slice(0, 10);
-                if (!items.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">暂无数据</div>'; return; }
-                track.innerHTML = items.map((it, idx) => {
-                    const url = `https://image.tmdb.org/t/p/w780${it.poster_path}`;
-                    const payload = encodeURIComponent(JSON.stringify({ id: it.id, type: it.media_type || v, title: it.title, release_date: it.release_date || '', poster_path: it.poster_path, backdrop_path: it.backdrop_path || '' }));
-                    return `<div class="trend-rank-item" data-payload="${payload}" onclick="openTrendRankItem(this)">
-                        <span class="trend-rank-num">${idx + 1}</span>
-                        <img class="poster" loading="lazy" src="${url}" alt="poster" onerror="this.style.visibility='hidden'">
-                    </div>`;
-                }).join('');
-            } catch (e) {
-                track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载失败</div>';
-            }
+            await _loadRankTrack(trackId, _maoyanRankLoaded,
+                '/api/maoyan?view=' + v,
+                it => ({ id: it.id, type: it.media_type || v, title: it.title, release_date: it.release_date || '', poster_path: it.poster_path, backdrop_path: it.backdrop_path || '' }));
         }
         // 「>」打开完整猫眼电视剧榜单页
-        // 与 gotoTmdbTrend 同理：setTmdbView / setMaoyanView 内部都会立即取数
-        //（setTmdbView → renderTmdbView → loadMaoyan；setMaoyanView → loadMaoyan），
-        // 再加上 switchTab('tmdb') 里的 renderTmdbView，点一次「›」会连打三次 /api/maoyan。
-        // 所以这里只赋值 + 刷标题，取数统一交给 switchTab('tmdb') 内那一次。
+        // 取数统一交给 switchTab('tmdb') 内的 renderTmdbView()：那里会按 _tmdbView
+        // 分派到 loadMaoyan。这里再调一次就会连打两遍 /api/maoyan。
+        // 所以这里只赋值 + 刷标题。
         function gotoMaoyanTv() {
             _tmdbView = 'maoyan';
             _maoyanView = 'tv';
@@ -3199,11 +3178,11 @@
         async function loadChannelRank(trackId) {
             const track = document.getElementById(trackId);
             if (!track) return;
-            track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载中...</div>';
+            track.innerHTML = _rankMsg('加载中...');
             try {
                 const d = await api('/api/monitor/recent?hours=' + CHANNEL_RECENT_HOURS + '&limit=20');
                 const raw = (d && d.items ? d.items : []);
-                if (!raw.length) { track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">近 24 小时暂无频道更新</div>'; return; }
+                if (!raw.length) { track.innerHTML = _rankMsg('近 24 小时暂无频道更新'); return; }
                 track.innerHTML = raw.slice(0, 20).map((it) => {
                     const url = it.poster_path ? `https://image.tmdb.org/t/p/w342${it.poster_path}` : '';
                     const payload = encodeURIComponent(JSON.stringify({ id: it.tmdb_id || 0, type: it.media_type || 'movie', title: it.title, release_date: it.year ? it.year + '-01-01' : '', poster_path: it.poster_path, backdrop_path: '' }));
@@ -3217,7 +3196,7 @@
                     </div>`;
                 }).join('');
             } catch (e) {
-                track.innerHTML = '<div style="color:var(--text-400);padding:14px 4px;font-size:12px;">加载失败</div>';
+                track.innerHTML = _rankMsg('加载失败');
             }
         }
         function chRankClick(ev, el) {
@@ -4076,12 +4055,6 @@
             </div>`;
         }
 
-        function setMaoyanView(view) {
-            _maoyanView = view;
-            _refreshToolbarTitle();
-            loadMaoyan();
-        }
-
         // 猫眼榜单：卡片、评分、订阅机制与 TMDB 榜单完全一致，只是数据源不同
         async function loadMaoyan() {
             const content = document.getElementById('tmdb-content');
@@ -4371,6 +4344,10 @@
         }
 
         // 配置分组：一个卡片内放多个配置项
+        //
+        // 注意：分组的 key 必须属于当前章节（章节名 = templete.env 里 `# 章节名` 那一行）。
+        // 若把 key 写进了别的章节，itemMap 里找不到它 → 分组条件为假 → 卡片整个不渲染，
+        // 表现为「配置项在页面上凭空消失」。加新键时请同步确认它在 templete.env 的归属章节。
         const ENV_GROUPS = {
             '用户配置': [
                 { title: '123 账号与密码', keys: ['ENV_123_CLIENT_ID', 'ENV_123_CLIENT_SECRET'], single: true },
