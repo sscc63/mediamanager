@@ -43,4 +43,7 @@ WORKDIR /app
 EXPOSE 8000
 # 首次启动（./config 为空挂载）时自动生成 user.env，保证"只有 docker-compose.yml 也能跑"；
 # 已有 user.env 不覆盖（保留用户在 Web 面板的配置，恢复备份同样生效）
-CMD ["/bin/sh", "-c", "[ -f /app/config/user.env ] || cp /app/templete.env /app/config/user.env; exec ./mmbot"]
+# 每次启动都把镜像内置模板同步到挂载卷的 templete.env：宿主 ./config 卷是持久的，
+# 若不回刷，/update 后磁盘上的模板还是旧版，导致 /api/env 返回的章节/key 落后于前端（如 PANFX 配置不显示）。
+# 只同步模板，user.env 绝不动（用户配置值都在那里）。
+CMD ["/bin/sh", "-c", "[ -f /app/config/user.env ] || cp /app/templete.env /app/config/user.env; cp /app/templete.env /app/config/templete.env; exec ./mmbot"]
