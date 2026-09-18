@@ -70,6 +70,10 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 				// /movie/<剧集id> 去查详情（电影与剧的 id 是两套独立空间），显示成无关作品。
 				// 识别出的类型为空时 channelSearchFirst 是 movie+tv 都搜，命中很可能是剧集。
 				item["media_type"] = hit.MediaType
+			} else {
+				// 识别/匹配失败（找不到对应 TMDB 条目）：不返回，避免在前端展示无海报的「幽灵」占位。
+				// 这类记录堆积在 24h 窗口里只会让海报墙越拉越长且大多是识别错的标题。
+				continue
 			}
 		}
 		items = append(items, item)

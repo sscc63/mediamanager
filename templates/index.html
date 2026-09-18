@@ -1857,9 +1857,9 @@
             padding-bottom: 6px;
             border-bottom: 1px solid var(--border);
         }
-        .tmdb-res-head-title { font-size: 13.5px; font-weight: 600; color: #fff; }
-        .tmdb-res-head-count { font-size: var(--fs-label); color: var(--text-400); }
-        .tmdb-res-head-count b { color: #fff; font-weight: 600; }
+        .tmdb-res-head-title { font-size: 13.5px; font-weight: 600; color: #18181b; }
+        .tmdb-res-head-count { font-size: var(--fs-label); color: #18181b; }
+        .tmdb-res-head-count b { color: #18181b; font-weight: 600; }
 
         .tmdb-res-list { display: flex; flex-direction: column; }
         /* 每行：顶行 = 标题 + 右侧解锁按钮；次行 = 体积/日期/评论/标签 chip */
@@ -3063,7 +3063,7 @@
         function _rankMsg(text) { return `<div style="${_RANK_PLACEHOLDER}">${text}</div>`; }
         // 全屏内容区（订阅探索 / 频道更新 / 追剧日历 / 趋势榜容器）的占位：居中、深色弱化文字、上下留白 40px。
         // 加载中 / 暂无数据 / 加载失败 等都复用同一段样式，原来内联字符串复制了 12+ 处。
-        const _CONTENT_PLACEHOLDER_STYLE = 'color:var(--text-400);padding:40px;text-align:center;';
+        const _CONTENT_PLACEHOLDER_STYLE = 'color:#fff;padding:40px;text-align:center;';
         function _contentPlaceholder(text) { return `<div style="${_CONTENT_PLACEHOLDER_STYLE}">${text}</div>`; }
 
         // loadedMap：按 trackId 记忆「已加载」，避免切换页面时重复打接口
@@ -5791,7 +5791,7 @@
                         : `<div style="width:100%;aspect-ratio:2/3;border-radius:var(--radius-sm);background:var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-400);font-size:11px;">无图</div>`;
                     return `<div style="text-align:center;">
                         ${poster}
-                        <div style="font-size:12px;font-weight:600;margin-top:5px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</div>
+                        <div style="font-size:12px;font-weight:600;margin-top:5px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#18181b;" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</div>
                         <div style="font-size:11px;color:var(--text-400);margin-top:2px;">${fmtDuration(g.seconds)}</div>
                     </div>`;
                 }).join('');
