@@ -3192,19 +3192,24 @@
         }
         // 频道更新视图：近 24 小时频道监控识别出的影视，海报网格展示（复用榜单卡片，点击进详情）
         // 超过 24 小时的旧消息不再铺出来 —— 频道内容是更新/连载性质，过期项只会让海报墙越积越长
-        async function showChannelUpdates() {
+        let _channelLoaded = false, _channelHtml = '';
+        async function showChannelUpdates(force) {
             const content = document.getElementById('tmdb-content');
             if (!content) return;
+            if (!force && _channelLoaded) { content.innerHTML = _channelHtml; return; }
             content.innerHTML = _contentPlaceholder('加载中...');
             try {
                 const d = await api('/api/monitor/recent?hours=' + CHANNEL_RECENT_HOURS + '&limit=200');
                 const items = (d && d.items ? d.items : []);
                 if (!items.length) { content.innerHTML = _contentPlaceholder('近 24 小时暂无频道更新'); return; }
-                content.innerHTML = `<div class="tmdb-grid">${items.map(channelCardHtml).join('')}</div>`;
+                _channelHtml = `<div class="tmdb-grid">${items.map(channelCardHtml).join('')}</div>`;
+                _channelLoaded = true;
+                content.innerHTML = _channelHtml;
             } catch (e) {
                 content.innerHTML = _contentPlaceholder('频道更新加载失败');
             }
         }
+        function refreshChannelUpdates() { _channelLoaded = false; _channelHtml = ''; showChannelUpdates(true); }
         // ============ 频道更新卡片：支持长按（或鼠标右键）弹出「立即入库」菜单 ============
         let _chPressTimer = null, _chLongResetTimer = null, _chPT = 0, _chPX = 0, _chPY = 0, _chLonged = false;
         let _channelTargetURL = '';
