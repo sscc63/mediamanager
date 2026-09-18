@@ -757,6 +757,18 @@
             opacity: 1;
             pointer-events: auto;
         }
+        /* 跟手拖动中：临时摘掉过渡，让 opacity 直接等于手指进度。
+           不摘的话每写一帧 opacity 都会被 .22s 过渡拖住，手指划完了画面还在追，
+           观感就成了「延迟跟随」而不是跟手。松手时移除本类，恢复过渡做吸附收尾。
+           只对卡片本身生效——文字/徽标是卡片的子元素，随卡片整体淡化，无需单独处理。 */
+        #tab-system .entry-carousel.dragging .entry-card {
+            transition: none;
+        }
+        /* 拖动中禁用文字选中，避免横向划动时选中标题/简介 */
+        #tab-system .entry-carousel.dragging {
+            user-select: none;
+            -webkit-user-select: none;
+        }
         #tab-system .entry-carousel .entry-card > img:not(.entry-brand) {
             width: 100%;
             height: 100%;
@@ -3913,12 +3925,23 @@
             _entryCardPool.set(key, c);
             return c;
         }
+        // 轮播代际：每次 _buildEntryCarousel 自增。跟手拖动用它做有效性校验 ——
+        // 拖动途中若轮播被重建（搜索框输入每字符重建一次），本次拖动立即作废，
+        // 否则会按旧索引把 opacity 写到已经换过位的卡片上。
+        let _entryCarouselGen = 0;
+
         function _buildEntryCarousel() {
             const strip = document.getElementById('tmdb-poster');
             if (!strip) return;
             let car = strip.querySelector('.entry-carousel');
             if (!car) { car = document.createElement('div'); car.className = 'entry-carousel'; strip.appendChild(car); }
+            _entryCarouselGen++;   // 作废进行中的跟手拖动
+            // 重建前清掉拖动残留：卡片节点来自池子会被复用，若上一次跟手拖到一半就
+            // 触发了重建（搜索框输入会每字符重建一次），残留的内联 opacity 会带到新一轮里，
+            // 表现为「刚进页面就有几张卡半透明」。dragging 类一并清掉，恢复 CSS 过渡。
+            car.classList.remove('dragging');
             car.replaceChildren(..._entryPosterItems.map(_entryCard));
+            [...car.querySelectorAll('.entry-card')].forEach(c => { c.style.opacity = ''; });
             // 非 active 的卡（10 张里的 9 张）先给浏览器一点时间把位图解码出来，
             // 滑动切过去时才是即时的。idle 里做，不跟首屏渲染抢主线程。
             const idle = window.requestIdleCallback || (cb => setTimeout(cb, 200));
@@ -4063,25 +4086,109 @@
                 if (it) _preheat((window.innerWidth <= 768 && it._heroPosterUrl) || _entryImgSrc(it));
             });
         }
+        // 跟手拖动阈值：手指横移达到这个距离时，两张卡的透明度正好交换完毕（p 到 1）。
+        // 取值参考：屏幕宽度约 375~430px，这个值约等于屏宽的 1/3，划起来不费力又不易误触。
+        const ENTRY_SWIPE_DIST = 140;
+
+        // 取轮播容器里的卡片数组（与 _updateEntryCarousel 用同一选择器，保证索引一致）
+        function _entryCards() {
+            const car = document.querySelector('#tmdb-poster .entry-carousel');
+            return car ? [...car.querySelectorAll('.entry-card')] : [];
+        }
+
+        // 拖动中：把手指进度 p 直接写进两张卡的内联 opacity，实现跟手淡化。
+        // 当前卡 1→0、目标卡 0→1，全程互补，任意时刻两者之和恒为 1（不会出现双淡的空窗）。
+        // p 同时夹在 [0,1]：拖动超过阈值后不再继续变化，给用户「已经划到位」的手感反馈。
+        // 文字/徽标是卡片的子元素，随卡片整体淡化，无需单独控制。
+        function _dragEntryPoster(from, dir, dx) {
+            const car = document.querySelector('#tmdb-poster .entry-carousel');
+            if (!car) return;
+            const cards = _entryCards();
+            const n = cards.length;
+            if (n < 2) return;
+            const to = ((from + dir) % n + n) % n;
+            const p = Math.max(0, Math.min(1, Math.abs(dx) / ENTRY_SWIPE_DIST));
+            cards.forEach((c, i) => {
+                if (i === from) c.style.opacity = String(1 - p);
+                else if (i === to) c.style.opacity = String(p);
+                else c.style.opacity = '';   // 其余九张保持 CSS 默认（opacity:0），清掉可能的残留
+            });
+            car.classList.add('dragging');
+            // 跟手时同步英雄底稿：目标卡的图若已预热过就直接用，避免文字先到、背景晚到
+            const item = _entryPosterItems[to];
+            if (item) _updateHeroBg((window.innerWidth <= 768 && item._heroPosterUrl) || _entryImgSrc(item));
+        }
+
+        // 松手收尾：清掉拖动期间写的内联 opacity，把控制权交回 .active 类与 CSS 过渡。
+        // 必须在切换索引/类名之前调用 —— 内联 opacity 优先级高于 .active 类，
+        // 残留的话会把「切过去」的目标卡压成半透明。
+        // dragging 先移除（恢复 transition），这样随后类名变化会有 .22s 收尾动画而不是硬切。
+        function _endEntryDrag(applied) {
+            const car = document.querySelector('#tmdb-poster .entry-carousel');
+            if (!car) return;
+            car.classList.remove('dragging');
+            _entryCards().forEach(c => { c.style.opacity = ''; });
+            if (applied) return;   // 调用方随后会走 _setEntryPoster 切好索引与类名
+            // 未过阈值：索引不变，但内联 opacity 刚被清掉、.active 又没重算，
+            // 需显式刷新一次让当前卡回到 opacity:1（弹回原位）。
+            _updateEntryCarousel();
+        }
+
         function _bindEntrySwipe(strip) {
             if (!strip || strip.dataset.swipedBound) return;
             strip.dataset.swipedBound = '1';
+            // _drag 记录本次触摸的手势状态；null 表示未在有效横向拖动中。
+            // gen 记下开始拖动时的轮播代际：拖动途中若轮播被重建（搜索框输入每字符重建一次），
+            // 卡片集合与索引都换了，本次拖动必须作废 —— 否则会按旧索引写 opacity 到错误的卡上。
+            let _drag = null;
             strip.addEventListener('touchstart', e => {
                 if (!e.touches || !e.touches[0]) return;
                 _entryPosterTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                _drag = null;
                 // 手指刚落下就把左右相邻两张的图预热掉：等 touchend 判定完方向再下载，
                 // 那 0.22s 的淡入基本全花在下载+解码上，看起来就是闪。
                 _preheatNeighborEntry();
             }, { passive: true });
-            strip.addEventListener('touchend', e => {
-                const t = _entryPosterTouch; _entryPosterTouch = null;
-                if (!t || !e.changedTouches || !e.changedTouches[0]) return;
-                const c = e.changedTouches[0];
+            // touchmove 不用 passive：横向锁定后要 preventDefault 阻止页面跟着滚。
+            // 「页面锁住、只切海报」的选择要求这里能拦默认行为，passive 下 preventDefault 无效。
+            strip.addEventListener('touchmove', e => {
+                const t = _entryPosterTouch;
+                if (!t || !e.touches || !e.touches[0]) return;
+                const c = e.touches[0];
                 const dx = c.clientX - t.x, dy = c.clientY - t.y;
-                if (Math.abs(dx) > Math.max(50, Math.abs(dy))) {
-                    _stepEntryPoster(dx < 0 ? 1 : -1);   // 左滑 -> 下一张；右滑 -> 上一张
+                if (!_drag) {
+                    // 方向锁定：纵向分量更大就认定是竖划页面，本次触摸放弃切海报。
+                    // 一旦锁定为横向就持续跟手，即使后面手指划歪了也不中途改判（否则会抖）。
+                    if (Math.abs(dx) < 12) return;                        // 位移太小，方向还不明确
+                    if (Math.abs(dx) <= Math.abs(dy)) return;             // 竖向为主 → 让页面滚
+                    _drag = { dir: dx < 0 ? 1 : -1, locked: true, gen: _entryCarouselGen, from: _entryPosterIdx };
                 }
-            }, { passive: true });
+                if (!_drag.locked || _drag.gen !== _entryCarouselGen) return;   // 轮播已重建 → 本次作废
+                e.preventDefault();   // 已确认是横向切海报 → 锁住页面滚动
+                _dragEntryPoster(_drag.from, _drag.dir, dx);
+            }, { passive: false });
+            const finish = e => {
+                const t = _entryPosterTouch; _entryPosterTouch = null;
+                const d = _drag; _drag = null;
+                if (!t || !d || !d.locked) return;
+                // 轮播在拖动途中被重建 → 索引与卡片集合都已换新，本次拖动作废，
+                // 但 dragging 类/内联样式可能已写上，仍需清一次（按当前节点清，是安全的）。
+                if (d.gen !== _entryCarouselGen) { _endEntryDrag(true); return; }
+                const c = (e.changedTouches && e.changedTouches[0]) || null;
+                const dx = c ? c.clientX - t.x : 0;
+                // 过阈值（阈值的一半）才真正切过去；否则弹回原图不改索引
+                const applied = Math.abs(dx) >= ENTRY_SWIPE_DIST / 2;
+                // 顺序有讲究：必须先清掉拖动期间写的内联 opacity、恢复 transition，
+                // 再切索引。内联样式的优先级高于 .active 类 —— 若先切类名，
+                // 目标卡会被残留的「opacity: p」压着，看起来就是「划过去了但没变亮」。
+                _endEntryDrag(applied);
+                if (applied) {
+                    _setEntryPoster(d.from + d.dir);
+                    _preheatNeighborEntry();   // 补预热新的左右邻居，为下一次滑动准备
+                }
+            };
+            strip.addEventListener('touchend', finish, { passive: true });
+            strip.addEventListener('touchcancel', finish, { passive: true });
         }
 
         async function loadTmdb(force, silent) {
