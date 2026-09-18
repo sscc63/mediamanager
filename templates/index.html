@@ -2176,7 +2176,7 @@
                                 后台任务
                             </div>
                             <div id="bg-tasks-grid">
-                                <div style="color: var(--text-400); padding: 12px 0;"><span class="_spin" style="width:14px;height:14px;border-width:2px;"></span><span style="margin-left:8px;">加载中</span></div>
+                                <div style="color: var(--text-400); padding: 12px 0;"><span class="_spin" style="width:14px;height:14px;border-width:2px;" role="status" aria-label="加载中"></span></div>
                             </div>
                         </div>
                     </div>
@@ -2189,6 +2189,9 @@
                                 <button class="history-batch-link danger" onclick="batchDeleteHistory(true)">深度删除</button>
                             </span>
                             <span class="history-title-label">整理历史</span>
+                            <span class="history-batch-progress" style="display:none;margin-left:10px;color:var(--text-500);font-size:12px;">
+                                <span class="_spin" style="width:14px;height:14px;border-width:2px;" role="status" aria-label="删除中"></span>
+                            </span>
                             <span style="margin-left:auto;display:flex;align-items:center;gap:12px;">
                                 <span class="history-select-count" style="display:none;font-size:12px;color:var(--text-500);"></span>
                                 <button class="card-title-icon-btn multi-select-btn" onclick="toggleHistorySelect()" title="多选">
@@ -3112,10 +3115,12 @@
             const t = String(text == null ? '' : text).trim();
             return /^加载中[.．。…]*$/.test(t) || /^loading[.\u2026]*$/i.test(t);
         }
-        // 加载态：图标 + 文案（文案可为空，此时只显示图标）
+        // 加载态：只显示旋转图标（不跟文字）。
+        // 图标本身没有语义，补 aria-label 让读屏软件仍能播报「加载中」。
+        // text 参数保留但仅用于可访问性标签，不再渲染成可见文字。
         function _loaderHtml(text, size) {
-            const label = text ? `<span style="margin-left:8px;">${text}</span>` : '';
-            return `<span style="display:inline-flex;align-items:center;">${_spinner(size)}${label}</span>`;
+            const label = String(text == null ? '' : text).trim() || '加载中';
+            return `<span style="display:inline-flex;align-items:center;" role="status" aria-label="${label}">${_spinner(size)}</span>`;
         }
 
         function _rankMsg(text) {
@@ -3124,12 +3129,12 @@
         }
         // 全屏内容区（订阅探索 / 频道更新 / 追剧日历 / 趋势榜容器）的占位：居中、深色弱化文字、上下留白 40px。
         // 加载中 / 暂无数据 / 加载失败 等都复用同一段样式，原来内联字符串复制了 12+ 处。
-        // 其中「加载中」自动升级为旋转图标 + 文案，空文案则只留图标（用于骨架位置更紧凑的场景）。
+        // 其中「加载中」只渲染旋转图标（不显示文字），其它文案原样输出。
         const _CONTENT_PLACEHOLDER_STYLE = 'color:#fff;padding:40px;text-align:center;';
         function _contentPlaceholder(text) {
-            const inner = (text === '' || text === undefined || text === null)
-                ? _loaderHtml('', 22)
-                : (_isLoadingText(text) ? _loaderHtml('加载中', 22) : text);
+            const inner = (text === '' || text === undefined || text === null || _isLoadingText(text))
+                ? _loaderHtml('加载中', 22)
+                : text;
             return `<div style="${_CONTENT_PLACEHOLDER_STYLE}">${inner}</div>`;
         }
 
@@ -5313,33 +5318,27 @@
 
         // ============ 整理历史多选 & 批量删除 ============
 
+        // 进入/退出多选态的统一入口：把「图标、标题显隐、批量按钮、计数」四处 UI 状态
+        // 集中在 _applyHistorySelectUI，避免 toggle 与 exit 两处各写一遍而走歪。
+        function _applyHistorySelectUI() {
+            const btn = document.querySelector('.multi-select-btn');
+            const icon = btn ? btn.querySelector('i') : null;
+            if (icon) icon.className = historySelectMode ? 'fas fa-xmark' : 'fas fa-check-double';
+            if (btn) btn.classList.toggle('active', historySelectMode);
+            document.querySelectorAll('.history-select-all').forEach(el => el.style.display = historySelectMode ? 'flex' : 'none');
+            document.querySelectorAll('.history-title-label').forEach(el => el.style.display = historySelectMode ? 'none' : '');
+            const actions = document.querySelector('.history-batch-actions');
+            if (actions) actions.style.display = historySelectMode ? 'flex' : 'none';
+            const countEl = document.querySelector('.history-select-count');
+            if (countEl) countEl.style.display = historySelectMode ? 'inline' : 'none';
+        }
+
         function toggleHistorySelect() {
             historySelectMode = !historySelectMode;
             if (!historySelectMode) {
                 selectedHistoryIds.clear();
             }
-            // 切换图标和按钮高亮状态
-            const btn = document.querySelector('.multi-select-btn');
-            const icon = btn ? btn.querySelector('i') : null;
-            if (icon) {
-                icon.className = historySelectMode ? 'fas fa-xmark' : 'fas fa-check-double';
-            }
-            if (btn) {
-                btn.classList.toggle('active', historySelectMode);
-            }
-            // 显示/隐藏 全选行（原表格 checkbox 列）
-            document.querySelectorAll('.history-select-all').forEach(el => el.style.display = historySelectMode ? 'flex' : 'none');
-            // 多选时隐藏卡片标题、显示标题栏上的批量操作按钮
-            document.querySelectorAll('.history-title-label').forEach(el => el.style.display = historySelectMode ? 'none' : '');
-            const actions = document.querySelector('.history-batch-actions');
-            if (actions) {
-                actions.style.display = historySelectMode ? 'flex' : 'none';
-            }
-            // 显示/隐藏选中计数
-            const countEl = document.querySelector('.history-select-count');
-            if (countEl) {
-                countEl.style.display = historySelectMode ? 'inline' : 'none';
-            }
+            _applyHistorySelectUI();
             updateHistorySelection();
             loadHistory(historyPage, true);   // silent：不先清空成"加载中"占位，避免高度塌陷导致手机端滚动跳动
         }
@@ -5395,6 +5394,14 @@
                 ? `确定深度删除这 ${count} 条记录？\n\n将执行四件套：\n1. 删除整理历史记录\n2. 删除本地 STRM 文件\n3. 删除网盘源文件（移入回收站）\n4. 通知 Emby 删除条目`
                 : `确定删除选中的 ${count} 条整理历史记录？`;
             if (!confirm(msg)) return;
+            // 删除期间显示加载动画并禁用两个按钮，防止重复点击提交多份删除请求。
+            // 深度删除要跑「删记录+删 STRM+移网盘回收站+通知 Emby」四件事、逐条串行，
+            // 条数多时可能几十秒；原先没有任何进行中反馈，用户会以为没点上而反复点。
+            const actions = document.querySelector('.history-batch-actions');
+            const progress = document.querySelector('.history-batch-progress');
+            const links = actions ? [...actions.querySelectorAll('.history-batch-link')] : [];
+            links.forEach(el => el.classList.add('disabled'));
+            if (progress) progress.style.display = 'inline-flex';
             try {
                 const r = await api('/api/transfer/history/batch-delete', 'POST', {
                     ids: Array.from(selectedHistoryIds),
@@ -5412,11 +5419,31 @@
                 } else {
                     showTransferAlert(`已删除 ${r.deleted||0} 条`, 'success');
                 }
-                loadHistory();
-                loadMediaStats();
+                // 删除后自动退出多选态：删除动作已完成，继续停在多选里只会让用户面对
+                // 一堆刚被删空的选中状态。exitHistorySelect 内部会清空选中集并刷新列表。
+                exitHistorySelect();
             } catch (e) {
                 showTransferAlert('删除失败: ' + e.message, 'error');
+                loadHistory();
+            } finally {
+                // 无论成功失败都要收掉加载态，否则失败后按钮会永久卡在禁用状态。
+                // 注意 exitHistorySelect 会把多选收起、连带隐藏 progress 容器，
+                // 这里再兜一次是为了失败分支（未退出多选）也能恢复可点。
+                if (progress) progress.style.display = 'none';
+                links.forEach(el => el.classList.remove('disabled'));
+                updateHistorySelection();
             }
+        }
+
+        // 退出多选态（直接置为关闭）：删除成功后调用，让界面回到普通浏览态。
+        // UI 显隐统一走 _applyHistorySelectUI，与 toggleHistorySelect 共用同一套逻辑。
+        function exitHistorySelect() {
+            if (!historySelectMode) { loadHistory(); loadMediaStats(); return; }
+            historySelectMode = false;
+            selectedHistoryIds.clear();
+            _applyHistorySelectUI();
+            loadHistory();
+            loadMediaStats();
         }
 
         // ============ STRM - 配置 ============
