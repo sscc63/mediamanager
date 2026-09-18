@@ -13,6 +13,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* hidden 属性必须能压过元素自带的 display：作者样式（类选择器）优先级高于 UA 的 [hidden]{display:none}，
+           不补这条，带 hidden 的 flex 容器仍会占位，它的 border 就会常态显示成一条线 */
+        [hidden] { display: none !important; }
         :root {
             /* MoviePilot / Material Design 调色板 */
             --primary: #6366F1;            /* indigo-500 */
@@ -34,7 +37,8 @@
             --text-400: #A1A1AA;           /* zinc-400 浅灰 */
             --text-300: #D4D4D8;           /* zinc-300 线框浅灰 */
 
-            --bg: #F4F4F5;                 /* zinc-100 冷中性底、不发蓝不发黄 */
+            --bg: #0c0c10;                 /* 深色底：与 body::before 的 background-color 一致，
+                                               避免海报切换时 body::before opacity 低导致浅色底透出闪白 */
             --surface: #FFFFFF;
             --border: #E4E4E7;             /* zinc-200 */
             --border-strong: #D4D4D8;      /* zinc-300 */
@@ -63,7 +67,7 @@
             radial-gradient(1200px 600px at 15% 40%, rgba(99,102,241,0.045), transparent 60%),
             radial-gradient(900px 500px at 100% 45%, rgba(14,165,233,0.03), transparent 55%),
             var(--bg);
-            color: var(--text-900);
+            color: #fff;
             min-height: 100vh;
             line-height: 1.55;
             -webkit-font-smoothing: antialiased;
@@ -71,41 +75,40 @@
             text-rendering: optimizeLegibility;
             letter-spacing: 0.005em;
         }
+        /* 英雄底基础层：原移动/桌面两个 @media 里各有一份逐字节相同的拷贝，现合并为一条基础规则。
+           移动端仅保留下方 @max768 里的「超大模糊摊平」覆盖块（按源码顺序自然压过本条）。 */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -70px;
+            z-index: 0;
+            pointer-events: none;
+            /* 不透明底色 + 海报叠图：海报尚未解码时 background-image 是「有声明无像素」，
+               透明底会直接露出页面白色底 —— 叠一层深色基底，最坏情况也只是暗一下，不会闪白。 */
+            background-color: #0c0c10;
+            background-image: var(--hero-bg, none);
+            background-size: cover, cover;
+            background-position: center top;
+            background-repeat: no-repeat;
+            filter: blur(34px) saturate(1.05);
+            opacity: .35;
+            -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
+            mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
+            transition: opacity .16s ease;
+            transform: translateZ(0);
+            will-change: opacity;
+        }
+        body.hero-bg-changing::before { opacity: 0; }
+        /* 系统页激活时的沉浸式适配：@max768 与 @min769 两份相同，且两断点无缝覆盖全宽度 → 提为基础规则 */
+        body:has(#tab-system.active) .content { position: relative; z-index: 1; }
+        body:has(#tab-system.active) .toolbar-icon-btn { color: #fff; }
+        body:has(#tab-system.active) #topToolbar button { pointer-events: auto; }
         @media (max-width: 768px) {
             html, body {
                 touch-action: manipulation;
             }
             input, select, textarea {
                 font-size: 16px !important;
-            }
-            body::before {
-                content: "";
-                position: fixed;
-                inset: -70px;
-                z-index: 0;
-                pointer-events: none;
-                /* 不透明底色 + 海报叠图：海报尚未解码时 background-image 是「有声明无像素」，
-                   透明底会直接露出页面白色底 —— 叠一层深色基底，最坏情况也只是暗一下，不会闪白。 */
-                background-color: #0c0c10;
-                background-image: var(--hero-bg, none);
-                background-size: cover, cover;
-                background-position: center top;
-                background-repeat: no-repeat;
-                filter: blur(34px) saturate(1.05);
-                opacity: .35;
-                -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-                mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-                transition: opacity .16s ease;
-                transform: translateZ(0);
-                will-change: opacity;
-            }
-            body.hero-bg-changing::before { opacity: 0; }
-            body:has(#tab-system.active) .content {
-                position: relative;
-                z-index: 1;
-            }
-            body:has(#tab-system.active) .toolbar-icon-btn {
-                color: #fff;
             }
         }
         ::selection { background: rgba(99, 102, 241, 0.16); }
@@ -655,7 +658,6 @@
                 background: transparent;
                 pointer-events: none;
             }
-            body:has(#tab-system.active) #topToolbar button { pointer-events: auto; }
             /* 桌面端系统页：海报铺满全屏，搜索/拼接/整理历史三卡浮在左侧 1/4 列竖向叠放 */
             #tab-system { position: relative; }
             #tab-system .tmdb-entry-card.card {
@@ -706,31 +708,6 @@
                 overflow-y: auto;
             }
             body:has(#tab-system.active) #tab-system .hero-search { z-index: 9; }
-            /* 桌面端模糊英雄底 + 系统页图标转白（与移动端一致） */
-            body::before {
-                content: "";
-                position: fixed;
-                inset: -70px;
-                z-index: 0;
-                pointer-events: none;
-                background-color: #0c0c10;
-                background-image: var(--hero-bg, none);
-                background-size: cover, cover;
-                background-position: center top;
-                background-repeat: no-repeat;
-                filter: blur(34px) saturate(1.05);
-                opacity: .35;
-                -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-                mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-                transition: opacity .16s ease;
-                transform: translateZ(0);
-                will-change: opacity;
-            }
-            body.hero-bg-changing::before { opacity: 0; }
-            body:has(#tab-system.active) .content { position: relative; z-index: 1; }
-            body:has(#tab-system.active) .toolbar-icon-btn {
-                color: #fff;
-            }
             /* 桌面端去侧栏：内容区占满全宽 */
             .content { max-width: none; }
         }
@@ -1385,7 +1362,6 @@
                 background: transparent;
                 pointer-events: none;
             }
-            body:has(#tab-system.active) #topToolbar button { pointer-events: auto; }
             /* 手机端搜索框：回到文档流常驻显示（不再脱流吸顶、不随手势隐藏）；
                位置经下方 order 规则排到订阅探索海报卡之后 */
             .hero-search {
@@ -1874,92 +1850,81 @@
         @keyframes tmdb-res-spin { to { transform: rotate(360deg); } }
         .tmdb-modal-subscribe .fa-spinner { animation: tmdb-res-spin 0.9s linear infinite; }
 
-        /* 资源区块：与搜索按钮拉开间距，整体成一整块分层面板 */
-        .tmdb-res-block {
-            margin-top: 16px;
-            padding: 12px;
-            border-radius: var(--radius-card);
-            background: linear-gradient(180deg, rgba(24, 24, 27, 0.04), rgba(24, 24, 27, 0.015));
-            box-shadow: inset 0 1px 0 var(--card-hi-light);
+        /* 资源区块：直接铺在详情卡里，跟「整理记录」一致 —— 行式列表，不用外框卡片 */
+        .tmdb-res-block { margin-top: 14px; }
+        .tmdb-res-head {
+            display: flex; align-items: baseline; justify-content: space-between;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
         }
-        /* 条目列表 */
-        .tmdb-res-list { display: flex; flex-direction: column; gap: 8px; }
+        .tmdb-res-head-title { font-size: 13.5px; font-weight: 600; color: #fff; }
+        .tmdb-res-head-count { font-size: var(--fs-label); color: var(--text-400); }
+        .tmdb-res-head-count b { color: #fff; font-weight: 600; }
+
+        .tmdb-res-list { display: flex; flex-direction: column; }
+        /* 每行：顶行 = 标题 + 右侧解锁按钮；次行 = 体积/日期/评论/标签 chip */
         .tmdb-res-item {
-            display: flex; align-items: center; gap: 12px;
-            padding: 11px 12px;
-            border-radius: var(--radius-sm);
-            background: var(--surface);
-            box-shadow: inset 0 1px 0 var(--card-hi-light), 0 0 0 1px rgba(228, 228, 231, 0.6);
-            min-width: 0;
-            transition: box-shadow 0.18s;
+            padding: 11px 0 9px;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.15s;
         }
-        .tmdb-res-item:hover { box-shadow: inset 0 1px 0 var(--card-hi-light), 0 0 0 1px var(--border-strong); }
-        .tmdb-res-item-main { flex: 1 1 auto; min-width: 0; }
+        .tmdb-res-item:hover { background: rgba(99, 102, 241, 0.05); }
+        .tmdb-res-item:last-child { border-bottom: none; }
+        .tmdb-res-item-top { display: flex; align-items: center; gap: 10px; }
         .tmdb-res-item-title {
-            font-size: var(--fs-label);
-            font-weight: 500;
-            line-height: 1.45;
-            color: var(--text-900);
-            /* 两行截断：标题长且规格信息在后半段，截一行会看不到体积/字幕 */
-            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-            overflow: hidden; word-break: break-word;
+            flex: 1 1 auto; min-width: 0;
+            font-size: 13.5px; font-weight: 500; color: var(--text-700);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
         .tmdb-res-item-title a { color: inherit; text-decoration: none; }
         .tmdb-res-item-title a:hover { color: var(--primary-hover); }
-        .tmdb-res-item-meta {
-            display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px;
-            margin-top: 4px;
-            font-size: 10.5px;
-            color: var(--text-400);
-        }
-        .tmdb-res-tag {
-            display: inline-block;
-            padding: 1px 7px;
-            border-radius: 999px;
-            background: var(--bg);
-            color: var(--text-500);
-            font-size: 10px;
-            line-height: 1.6;
-            white-space: nowrap;
-        }
-        .tmdb-res-size {
-            font-weight: 600;
-            color: var(--text-600);
-            white-space: nowrap;
-        }
-        /* 解锁按钮：描边式，消耗站点积分所以用警示色描边，不会误点成普通按钮 */
+        /* 解锁按钮：行尾右对齐，悬停时背景变白 */
         .tmdb-res-unlock {
-            flex: 0 0 auto;
+            flex: 0 0 auto; margin-left: auto;
             display: inline-flex; align-items: center; gap: 4px;
-            padding: 6px 12px;
+            padding: 5px 11px;
             font-size: 11.5px; font-weight: 600;
-            color: var(--warning);
-            background: transparent;
-            border: 1px solid var(--warning);
-            border-radius: 999px;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: background 0.18s, color 0.18s, opacity 0.18s;
+            color: var(--text-700); background: transparent;
+            border: 1px solid var(--border-strong); border-radius: 8px;
+            cursor: pointer; white-space: nowrap;
+            transition: background 0.18s, color 0.18s, border-color 0.18s, opacity 0.18s;
         }
-        .tmdb-res-unlock:hover { background: var(--warning); color: #fff; }
-        .tmdb-res-unlock:disabled { opacity: .55; cursor: default; }
-        .tmdb-res-unlock:disabled:hover { background: transparent; color: var(--warning); }
-        .tmdb-res-unlock.done { color: var(--success); border-color: var(--success); }
-        .tmdb-res-unlock.done:hover { background: transparent; color: var(--success); }
+        .tmdb-res-unlock:hover { background: var(--surface); border-color: var(--primary); color: var(--primary-hover); }
+        .tmdb-res-unlock:disabled { opacity: .6; cursor: default; }
+        .tmdb-res-unlock:disabled:hover { background: transparent; border-color: var(--border-strong); color: var(--text-700); }
+        .tmdb-res-unlock.done { background: var(--success-soft); color: var(--success); border-color: transparent; }
+        .tmdb-res-unlock.done:hover { background: var(--success-soft); color: var(--success); }
 
-        /* 解锁后展开的链接区 */
-        .tmdb-res-links {
-            margin-top: 9px; padding-top: 9px;
-            border-top: 1px solid var(--border);
-            display: flex; flex-direction: column; gap: 5px;
+        /* 次行：体积加粗 + 小分隔点 + 日期/评论/标签 */
+        .tmdb-res-item-meta {
+            display: flex; align-items: center; gap: 6px;
+            margin-top: 5px;
+            font-size: 11px; color: var(--text-400);
+            min-width: 0;
         }
-        .tmdb-res-link {
-            display: flex; align-items: center; gap: 8px;
-            font-size: 11.5px;
-        }
-        .tmdb-res-link-pan {
+        .tmdb-res-size { flex: 0 0 auto; font-weight: 600; color: var(--text-700); }
+        .tmdb-res-sep { flex: 0 0 auto; width: 2px; height: 2px; border-radius: 50%; background: var(--text-300); }
+        .tmdb-res-tag {
             flex: 0 0 auto;
-            padding: 1px 7px; border-radius: 999px;
+            padding: 1px 8px; border-radius: 999px;
+            background: #F1F5F9; color: var(--text-500);
+            font-size: 11px; line-height: 1.6;
+        }
+        /* 清晰度/版本类标签用品牌色突出：挑资源时第一眼看的就是这个 */
+        .tmdb-res-tag.hi {
+            background: var(--primary-light); color: var(--primary-hover);
+            font-weight: 600;
+        }
+
+        /* 解锁后展开的链接区：跟「整理记录」一致，用虚线把链接划成单独一格 */
+        .tmdb-res-links {
+            margin-top: 8px; padding-top: 8px;
+            border-top: 1px dashed var(--border);
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .tmdb-res-link { display: flex; align-items: center; gap: 7px; font-size: 11.5px; }
+        .tmdb-res-link-pan {
+            flex: 0 0 auto; padding: 1px 7px; border-radius: 999px;
             background: var(--primary-light); color: var(--primary-hover);
             font-size: 10px; font-weight: 600;
         }
@@ -1971,15 +1936,16 @@
         .tmdb-res-link-url:hover { text-decoration: underline; }
         .tmdb-res-copy {
             flex: 0 0 auto;
-            background: none; border: none; padding: 0 2px;
-            color: var(--text-400); cursor: pointer; font-size: 11px;
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 8px; border-radius: 6px;
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-400); cursor: pointer; font-size: 10.5px;
+            transition: color 0.18s, border-color 0.18s;
         }
-        .tmdb-res-copy:hover { color: var(--primary-hover); }
+        .tmdb-res-copy:hover { color: var(--primary-hover); border-color: var(--border-strong); }
         .tmdb-res-note {
-            font-size: var(--fs-meta);
-            color: var(--text-400);
-            line-height: 1.6;
-            padding: 2px 0;
+            font-size: var(--fs-meta); color: var(--text-400);
+            line-height: 1.6; padding: 6px 0;
         }
         .tmdb-res-note.warn { color: var(--warning); }
         .tmdb-res-note.error { color: var(--danger); }
@@ -2836,7 +2802,7 @@
         async function showSubscribed() {
             const content = document.getElementById('tmdb-content');
             if (!content) return;
-            const emptyHtml = '<div style="color: var(--text-400); padding: 40px; text-align: center;">暂无订阅</div>';
+            const emptyHtml = _contentPlaceholder('暂无订阅');
             const keys = getSubscribedKeys();
             if (!keys.length) { content.innerHTML = emptyHtml; return; }  // 未配置订阅关键词：留在已订阅页显示空态
             const cache = getSubCache();
@@ -2850,7 +2816,7 @@
             const toSearch = keys.slice(0, 60).filter(k => !cache[k]);
             // 仅在真正需要搜索时才显示加载中提示（全缓存命中时直接渲染，避免闪烁）
             if (toSearch.length > 0) {
-                content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">加载中...</div>';
+                content.innerHTML = _contentPlaceholder('加载中...');
             }
             const BATCH = 4;  // 小并发搜索，瞬时内存可控
             for (let i = 0; i < toSearch.length; i += BATCH) {
@@ -2911,10 +2877,10 @@
         async function showCalendar() {
             const content = document.getElementById('tmdb-content');
             if (!content) return;
-            content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">加载中...</div>';
+            content.innerHTML = _contentPlaceholder('加载中...');
             const tvItems = getSubscribedTvItems();
             if (!tvItems.length) {
-                content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">暂无已订阅的电视剧，无法生成更新日期条</div>';
+                content.innerHTML = _contentPlaceholder('暂无已订阅的电视剧，无法生成更新日期条');
                 return;
             }
             const ids = tvItems.map(it => `tv:${it.id}`).join(',');
@@ -2925,11 +2891,11 @@
                 return;
             }
             if (!_calData) {
-                content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">追剧日历返回为空</div>';
+                content.innerHTML = _contentPlaceholder('追剧日历返回为空');
                 return;
             }
             if (_calData.configured === false) {
-                content.innerHTML = `<div style="color: var(--text-400); padding: 40px; text-align: center;">${escapeHtml(_calData.error || '未配置 TMDB API Key')}</div>`;
+                content.innerHTML = _contentPlaceholder(_calData.error || '未配置 TMDB API Key');
                 return;
             }
             // 订阅片单中 tmdb_id -> 海报条目（渲染海报卡片，含点击看详情）
@@ -3095,6 +3061,10 @@
         // 与条目字段的取名，所以抽成一个 loader，调用方只负责传 URL 和字段映射。
         const _RANK_PLACEHOLDER = 'color:var(--text-400);padding:14px 4px;font-size:12px;';
         function _rankMsg(text) { return `<div style="${_RANK_PLACEHOLDER}">${text}</div>`; }
+        // 全屏内容区（订阅探索 / 频道更新 / 追剧日历 / 趋势榜容器）的占位：居中、深色弱化文字、上下留白 40px。
+        // 加载中 / 暂无数据 / 加载失败 等都复用同一段样式，原来内联字符串复制了 12+ 处。
+        const _CONTENT_PLACEHOLDER_STYLE = 'color:var(--text-400);padding:40px;text-align:center;';
+        function _contentPlaceholder(text) { return `<div style="${_CONTENT_PLACEHOLDER_STYLE}">${text}</div>`; }
 
         // loadedMap：按 trackId 记忆「已加载」，避免切换页面时重复打接口
         // toPayload：把上游条目映射成 openTmdbDetail 需要的字段
@@ -3225,14 +3195,14 @@
         async function showChannelUpdates() {
             const content = document.getElementById('tmdb-content');
             if (!content) return;
-            content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">加载中...</div>';
+            content.innerHTML = _contentPlaceholder('加载中...');
             try {
                 const d = await api('/api/monitor/recent?hours=' + CHANNEL_RECENT_HOURS + '&limit=200');
                 const items = (d && d.items ? d.items : []);
-                if (!items.length) { content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">近 24 小时暂无频道更新</div>'; return; }
+                if (!items.length) { content.innerHTML = _contentPlaceholder('近 24 小时暂无频道更新'); return; }
                 content.innerHTML = `<div class="tmdb-grid">${items.map(channelCardHtml).join('')}</div>`;
             } catch (e) {
-                content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">频道更新加载失败</div>';
+                content.innerHTML = _contentPlaceholder('频道更新加载失败');
             }
         }
         // ============ 频道更新卡片：支持长按（或鼠标右键）弹出「立即入库」菜单 ============
@@ -3440,12 +3410,12 @@
             try {
                 const data = await api(`/api/tmdb/detail?id=${encodeURIComponent(item.id)}&type=${encodeURIComponent(item.type)}`);
                 if (!data.configured || data.error || !data.detail) {
-                    box.innerHTML = `<div style="padding:48px 20px;text-align:center;color:var(--text-600);">${escapeHtml(data.error || '详情加载失败')}</div>`;
+                    box.innerHTML = `<div style="padding:48px 20px;text-align:center;color:#fff;">${escapeHtml(data.error || '详情加载失败')}</div>`;
                     return;
                 }
                 renderTmdbDetail(data.detail);
             } catch (e) {
-                box.innerHTML = '<div style="padding:48px 20px;text-align:center;color:var(--text-600);">详情加载失败：' + escapeHtml(e.message || '请求失败') + '</div>';
+                box.innerHTML = '<div style="padding:48px 20px;text-align:center;color:#fff;">详情加载失败：' + escapeHtml(e.message || '请求失败') + '</div>';
             }
         }
 
@@ -3524,7 +3494,9 @@
             _resItems = {};
             const kw = (title || '').trim();
             if (!kw) return '';
-            return `<div class="tmdb-res-block">
+            // 整块先藏起来：没点搜索前详情卡下方不该有任何横线或空隙
+            return `<div class="tmdb-res-block" id="tmdb-res-block" hidden>
+                <div class="tmdb-res-head" id="tmdb-res-head" hidden></div>
                 <div class="tmdb-res-list" id="tmdb-res-list"></div>
             </div>`;
         }
@@ -3534,6 +3506,9 @@
             const kw = btn.dataset.kw || '';
             const list = document.getElementById('tmdb-res-list');
             if (!list || !kw) return;
+            // 首次搜索才把整块放出来（之前是 hidden，详情卡下方干净无线条）
+            const block = document.getElementById('tmdb-res-block');
+            if (block) block.hidden = false;
             // 搜索中锁按钮，防连点（站点对高频请求不友好）
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner"></i> 搜索中';
@@ -3559,8 +3534,17 @@
 
         function renderResList(list, data) {
             const items = data.items || [];
+            // 区块头只在有结果时显示；空结果时只留 note 引导用户去资源站
+            const head = document.getElementById('tmdb-res-head');
+            if (head) {
+                if (!items.length) {
+                    head.hidden = true;
+                } else {
+                    head.hidden = false;
+                    head.innerHTML = `<span class="tmdb-res-head-title">搜索结果</span><span class="tmdb-res-head-count">共 <b>${items.length}</b> 条</span>`;
+                }
+            }
             if (!items.length) {
-                // 空结果给一条直达资源站的路径，比干瞪「未找到」有用
                 const link = data.search_url
                     ? `<a href="${escapeHtml(data.search_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary-hover);">去资源站搜「${escapeHtml(data.keyword || '')}」</a>`
                     : '';
@@ -3570,24 +3554,35 @@
             list.innerHTML = items.map(it => renderResItem(it)).join('');
         }
 
+        // 清晰度/版本类标签用品牌色突出：找资源时第一眼看的就是这个
+        const RES_QUALITY_RE = /^(4K|2160p|1080p|720p|8K|UHD|HDR|SDR|10bit|杜比|视界|原盘|REMUX|蓝光|BD)$/i;
+        function isQualityTag(t) { return RES_QUALITY_RE.test(String(t || '').trim()); }
+
+        // 日期只留月日：列表里年份都一样，省出来的宽度留给标签
+        function shortDate(d) {
+            const s = String(d || '').trim();
+            return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.slice(5) : s;
+        }
+
         function renderResItem(it) {
-            // 标签最多展示 5 个：条目高度要稳，标签铺满会把解锁按钮挤到看不见
-            const tags = (it.tags || []).slice(0, 5)
-                .map(t => `<span class="tmdb-res-tag">${escapeHtml(t)}</span>`).join('');
-            const size = it.size ? `<span class="tmdb-res-size"><i class="fas fa-database"></i> ${escapeHtml(it.size)}</span>` : '';
-            const cms = it.comments ? `<span>${it.comments} 评论</span>` : '';
-            const date = it.date ? `<span>${escapeHtml(it.date)}</span>` : '';
+            // 标签最多 3 个：meta 行是单行不换行的，多了会把体积/日期挤没
+            const tags = (it.tags || []).slice(0, 3)
+                .map(t => `<span class="tmdb-res-tag${isQualityTag(t) ? ' hi' : ''}">${escapeHtml(t)}</span>`).join('');
+            // 体积 / 日期 / 评论 之间插小分隔点，最后一段后面不插
+            const parts = [];
+            if (it.size) parts.push(`<span class="tmdb-res-size">${escapeHtml(it.size)}</span>`);
+            if (it.date) parts.push(`<span>${escapeHtml(shortDate(it.date))}</span>`);
+            if (it.comments) parts.push(`<span>${it.comments} 评</span>`);
+            const meta = parts.join('<span class="tmdb-res-sep"></span>');
             return `<div class="tmdb-res-item" data-tid="${escapeHtml(it.tid)}">
-                <div class="tmdb-res-item-main">
-                    <div class="tmdb-res-item-title">
-                        <a href="${escapeHtml(it.url)}" target="_blank" rel="noopener noreferrer" title="打开资源站原帖">${escapeHtml(it.title)}</a>
-                    </div>
-                    <div class="tmdb-res-item-meta">${size}${tags}${date}${cms}</div>
-                    <div class="tmdb-res-links" hidden></div>
+                <div class="tmdb-res-item-top">
+                    <span class="tmdb-res-item-title"><a href="${escapeHtml(it.url)}" target="_blank" rel="noopener noreferrer" title="打开资源站原帖">${escapeHtml(it.title)}</a></span>
+                    <button class="tmdb-res-unlock" onclick="unlockRes(this)" title="获取网盘链接（该站点要求回复可见，会以你配置的账号在该帖下发一条预设回复，公开可见）">
+                        <i class="fas fa-lock"></i> 解锁
+                    </button>
                 </div>
-                <button class="tmdb-res-unlock" onclick="unlockRes(this)" title="获取网盘链接（该站点要求回复可见，会以你配置的账号在该帖下发一条预设回复，公开可见）">
-                    <i class="fas fa-lock"></i> 解锁
-                </button>
+                <div class="tmdb-res-item-meta">${meta}${parts.length ? '<span class="tmdb-res-sep"></span>' : ''}${tags}</div>
+                <div class="tmdb-res-links" hidden></div>
             </div>`;
         }
 
@@ -4041,7 +4036,7 @@
             _exitSubscribedView();
             const content = document.getElementById('tmdb-content');
             if (!content) return;
-            content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">加载中...</div>';
+            content.innerHTML = _contentPlaceholder('加载中...');
             try {
                 let query;
                 if (_tmdbQuery) {
@@ -4077,7 +4072,7 @@
                 return;
             }
             if (!data.items || data.items.length === 0) {
-                content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">暂无数据，请稍后刷新重试</div>';
+                content.innerHTML = _contentPlaceholder('暂无数据，请稍后刷新重试');
                 return;
             }
             content.innerHTML = `<div class="tmdb-grid">${data.items.map(item => renderTmdbCard(item)).join('')}</div>`;
@@ -4094,7 +4089,7 @@
         async function loadMaoyan() {
             const content = document.getElementById('tmdb-content');
             if (!content) return;
-            content.innerHTML = '<div style="color: var(--text-400); padding: 40px; text-align: center;">加载中...</div>';
+            content.innerHTML = _contentPlaceholder('加载中...');
             try {
                 const data = await api('/api/maoyan?view=' + encodeURIComponent(_maoyanView));
                 _renderTmdbResult(content, data, 'maoyan');
