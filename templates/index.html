@@ -1432,7 +1432,7 @@
             #tab-system .tmdb-entry-card.card {
                 margin-left: -16px;                /* 保留横向出血：海报延伸到屏幕左右边缘 */
                 margin-right: -16px;
-                margin-top: calc(-1 * env(safe-area-inset-top));   /* 只上拉 safe-area 到刘海下缘：不再用 58px 把人物头推出屏幕顶端 */
+                margin-top: 0;   /* 透明状态栏下内容延伸至屏幕顶：无需避让/上推 safe-area，避免顶部多留一个状态栏空档 */
                 padding: 0;
                 border-radius: 0;
                 background: transparent;
