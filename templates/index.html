@@ -1874,16 +1874,26 @@
         @keyframes tmdb-res-spin { to { transform: rotate(360deg); } }
         .tmdb-modal-subscribe .fa-spinner { animation: tmdb-res-spin 0.9s linear infinite; }
 
+        /* 资源区块：与搜索按钮拉开间距，整体成一整块分层面板 */
+        .tmdb-res-block {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: var(--radius-card);
+            background: linear-gradient(180deg, rgba(24, 24, 27, 0.04), rgba(24, 24, 27, 0.015));
+            box-shadow: inset 0 1px 0 var(--card-hi-light);
+        }
         /* 条目列表 */
-        .tmdb-res-list { display: flex; flex-direction: column; gap: 6px; }
+        .tmdb-res-list { display: flex; flex-direction: column; gap: 8px; }
         .tmdb-res-item {
-            display: flex; align-items: center; gap: 10px;
-            padding: 9px 11px;
-            border: 1px solid var(--border);
+            display: flex; align-items: center; gap: 12px;
+            padding: 11px 12px;
             border-radius: var(--radius-sm);
             background: var(--surface);
+            box-shadow: inset 0 1px 0 var(--card-hi-light), 0 0 0 1px rgba(228, 228, 231, 0.6);
             min-width: 0;
+            transition: box-shadow 0.18s;
         }
+        .tmdb-res-item:hover { box-shadow: inset 0 1px 0 var(--card-hi-light), 0 0 0 1px var(--border-strong); }
         .tmdb-res-item-main { flex: 1 1 auto; min-width: 0; }
         .tmdb-res-item-title {
             font-size: var(--fs-label);
@@ -1939,8 +1949,8 @@
 
         /* 解锁后展开的链接区 */
         .tmdb-res-links {
-            margin-top: 7px; padding-top: 7px;
-            border-top: 1px dashed var(--border);
+            margin-top: 9px; padding-top: 9px;
+            border-top: 1px solid var(--border);
             display: flex; flex-direction: column; gap: 5px;
         }
         .tmdb-res-link {
@@ -3604,8 +3614,21 @@
                     box.hidden = false;
                     // 如实告知这次到底发生了什么：是刚替他回了一帖，还是内容本来就已解锁
                     const how = r.replied ? '已在该帖回复，链接已解锁' : '链接已获取';
-                    box.innerHTML = `<div class="tmdb-res-note">${how}</div>`
-                        + r.links.map(l => renderResLink(l)).join('');
+                    // 只对 123 网盘链接自动转存入库；夸克/115/等其他网盘链接仍保留手动复制。
+                    // 判断与后端 rePan123 域名白名单保持一致，兜底用 URL 匹配。
+                    const isPan123 = l => String(l.pan).trim().toLowerCase() === '123'
+                        || /(?:123pan|123865|123684|123912)\.[a-z]+\/(?:s|123pan)\//i.test(String(l.url || ''));
+                    const pan123 = r.links.filter(isPan123);
+                    const others = r.links.filter(l => !isPan123(l));
+                    let note = `<div class="tmdb-res-note">${how}</div>`;
+                    if (pan123.length) {
+                        pan123.forEach(l => autoTransferPanfx(l.url));
+                        note += `<div class="tmdb-res-note">${pan123.length} 个 123 网盘链接已自动提交入库，请留意 TG 通知</div>`;
+                    }
+                    if (others.length) {
+                        note += `<div class="tmdb-res-note">另有 ${others.length} 个非 123 网盘链接（夸克/115/其他），仅支持手动转存</div>`;
+                    }
+                    box.innerHTML = note + r.links.map(l => renderResLink(l)).join('');
                     btn.className = 'tmdb-res-unlock done';
                     btn.innerHTML = '<i class="fas fa-lock-open"></i> 已解锁';
                     // 保持 disabled：链接已经拿到，不需要也不应该再点一次
@@ -3637,6 +3660,18 @@
             if (!box) return;
             box.hidden = false;
             box.innerHTML = `<div class="tmdb-res-note ${kind || ''}">${html}</div>`;
+        }
+
+        // 解锁后自动转存：复用「立即入库」同一通道 /api/monitor/transfer。
+        // 只处理 123 网盘链接（调用处已按 isPan123 过滤），仅在这条用户主动触发的
+        // 解锁流程里调用，不区分网盘、不批量连发，失败静默（TG 通知兜底）。
+        function autoTransferPanfx(url) {
+            if (!url) return;
+            fetch('/api/monitor/transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_url: url })
+            }).catch(() => {});
         }
 
         function copyResLink(btn) {
@@ -4359,7 +4394,8 @@
         // 前端不再展示的配置项（功能仍保留，读 user.env 中的值）
         // ENV_PANFX_BASE 属高级项：站点域名换过一次（pan1.me / 123panfx.com），
         // 普通使用不要暴露，改 user.env 即可。
-        const HIDDEN_KEYS = new Set(['ENV_DIY_LINK_PWD', 'ENV_AUTO_MAKE_JSON', 'ENV_MAKE_NEW_LINK', 'ENV_PANFX_BASE']);
+        // ENV_PANFX_AUTO_REPLY 恒为 1（解锁必自动回复，站点"回复后再查看"），前端不需要开关。
+        const HIDDEN_KEYS = new Set(['ENV_DIY_LINK_PWD', 'ENV_AUTO_MAKE_JSON', 'ENV_MAKE_NEW_LINK', 'ENV_PANFX_BASE', 'ENV_PANFX_AUTO_REPLY']);
         // 以明文显示（不隐藏）的敏感字段
         const FORCE_TEXT_KEYS = new Set(['ENV_TG_BOT_TOKEN', 'ENV_KUAKE_COOKIE', 'ENV_PANFX_COOKIE']);
 

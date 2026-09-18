@@ -61,7 +61,7 @@ func stripExt(filename string) string {
 }
 
 // cleanTitle 清理标题中的分隔符，转为空格并去除多余空白。
-var sepRe = regexp.MustCompile(`[\.\-_]`)
+var sepRe = regexp.MustCompile(`[\.\-_+\[\]]`)
 var spaceRe = regexp.MustCompile(`\s+`)
 
 func cleanTitle(title string) string {
@@ -79,7 +79,7 @@ var (
 	// 分辨率
 	resRe = regexp.MustCompile(`(?i)(?:\b|_)(2160p|1080p|720p|480p|4k|8k|4320p)(?:\b|_)`)
 	// 来源/片源
-	sourceRe = regexp.MustCompile(`(?i)(?:\b|_)(BDREMUX|REMUX|BluRay|WEB-DL|WEBRip|HDRip|BDRip|HDTV|DVD|HDDVD|DVDRip|WEB\.DL|WEB\.Rip|Blu-Ray)(?:\b|_)`)
+	sourceRe = regexp.MustCompile(`(?i)(?:\b|_)(BDREMUX|REMUX|BluRay|WEB-DL|WEBRip|HDRip|BDRip|HDTV|DVD|HDDVD|DVDRip|WEB\.DL|WEB\.Rip|Blu-Ray|CAM|CAMRip|TS|TC)(?:\b|_)`)
 	// 发布组：文件名末尾 [Group] 或 -Group
 	groupBracketRe = regexp.MustCompile(`[\[\(]([^\]\)]+)[\]\)]\s*$`)
 	groupDashRe    = regexp.MustCompile(`[-_]([A-Za-z0-9]+)$`)
@@ -89,8 +89,8 @@ var (
 	seasonWordRe = regexp.MustCompile(`(?i)\bSeason\s+(\d{1,2})\b`)
 	// 年份：四位数年份
 	yearRe = regexp.MustCompile(`(?:\(|\[|\s|\.|\-|_|^)(\d{4})(?:\)|\]|\s|\.|\-|_|$)`)
-	// 视频编码
-	videoCodecRe = regexp.MustCompile(`(?i)(?:\b|_)(HEVC|H\.?265|x265|H\.?264|x264|AVC|AV1)(?:\b|_)`)
+	// 视频编码（允许 H 265 / H.265 / H265 空格或点变体）
+	videoCodecRe = regexp.MustCompile(`(?i)(?:\b|_)(HEVC|H[.]? ?265|x265|H[.]? ?264|x264|AVC|AV1)(?:\b|_)`)
 	// TMDB ID 标记 {tmdb-1280738} / [tmdbid-271016]
 	tmdbIDRe = regexp.MustCompile(`(?i)[{\[]tmdb(?:id)?(?:=|-)(\d+)[}\]]`)
 	// 纯季目录名
@@ -214,7 +214,12 @@ func isYearOrSeason(s string) bool {
 		return len(s) == 4
 	}
 	ls := strings.ToLower(s)
-	return strings.HasPrefix(ls, "s") || strings.HasPrefix(ls, "season")
+	if strings.HasPrefix(ls, "season") {
+		return true
+	}
+	// 仅当是 s+数字（如 s01）才算季标；"SCOPE"/"STAR"/"SIZE" 等 s 开头词不是季，
+	// 否则会被误判导致发布组不剥、残留进 TMDB 查询标题
+	return len(ls) >= 2 && ls[0] == 's' && ls[1] >= '0' && ls[1] <= '9'
 }
 
 // guessType 判断媒体类型。
@@ -231,8 +236,42 @@ func guessType(m MetaInfo, expectedType string) string {
 	return "movie"
 }
 
-// extractTitle 提取标题：移除季集/分辨率/来源/年份/发布组等片段。
+// extractTitle 提取标题：优先用结构锚点（年份/季集）截断，无锚点时退回标签剥离法。
 func extractTitle(baseName string, m MetaInfo, yearStr string) string {
+	if name, ok := cutByAnchor(baseName, yearStr, m); ok {
+		return name
+	}
+	return stripTitleTags(baseName, m, yearStr)
+}
+
+// cutByAnchor 稳健主路径：文件名结构恒为「标题·年份(或季集)·其后全是媒体标签」，
+// 取第一个「年份或季集」锚点之前的片段作为标题。这样新增任意媒体标签（CAM/H 265/SCOPE…）
+// 都不必再维护剥离正则。锚点在开头或缺失时返回 ok=false 交给降级路径。
+func cutByAnchor(s string, yearStr string, m MetaInfo) (string, bool) {
+	cut := -1
+	if yearStr != "" {
+		if mm := yearRe.FindStringSubmatchIndex(s); mm != nil && len(mm) >= 4 && mm[2] >= 0 {
+			cut = mm[2]
+		}
+	}
+	if se := seasonEpisodeRe.FindStringIndex(s); se != nil && (cut < 0 || se[0] < cut) {
+		cut = se[0]
+	}
+	if sw := seasonWordRe.FindStringIndex(s); sw != nil && (cut < 0 || sw[0] < cut) {
+		cut = sw[0]
+	}
+	if cut <= 0 {
+		return "", false
+	}
+	head := cleanTitle(s[:cut])
+	if head == "" {
+		return "", false
+	}
+	return head, true
+}
+
+// stripTitleTags 降级路径：文件名没有年份/季集锚点时，用标签剥离法抹除媒体片段。
+func stripTitleTags(baseName string, m MetaInfo, yearStr string) string {
 	s := baseName
 	// 去掉季集片段
 	s = seasonEpisodeRe.ReplaceAllString(s, " ")
@@ -264,9 +303,7 @@ func extractTitle(baseName string, m MetaInfo, yearStr string) string {
 		rg := regexp.MustCompile(`(?i)[-\s_]*` + regexp.QuoteMeta(m.ReleaseGroup) + `\s*$`)
 		s = rg.ReplaceAllString(s, " ")
 	}
-	s = cleanTitle(s)
-	// 中文标题（含中文无空格）直接保留
-	return s
+	return cleanTitle(s)
 }
 
 // recognizeByFallback guessit 失败时的降级识别：简单正则提取标题和年份。
