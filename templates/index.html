@@ -1867,6 +1867,134 @@
             flex-wrap: wrap;
             gap: 10px;
         }
+        /* ============ 详情页「资源」区块（123panfx 资源站） ============ */
+        .tmdb-res-block { margin-top: 22px; }
+        /* 标题行：左侧「资源」+ 右侧「搜索」文字按钮 */
+        .tmdb-res-head {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 10px; margin-bottom: 8px;
+        }
+        .tmdb-res-title {
+            font-size: var(--fs-subtitle);
+            font-weight: 600;
+            line-height: 1.35;
+            color: var(--text-700);
+        }
+        /* 文字按钮：无底色无描边，只有字 + 图标，hover 变主题色 */
+        .tmdb-res-search {
+            display: inline-flex; align-items: center; gap: 5px;
+            background: none; border: none; padding: 2px 0;
+            font-size: var(--fs-subtitle);
+            font-weight: 600;
+            color: var(--text-500);
+            cursor: pointer;
+            transition: color 0.18s;
+            white-space: nowrap;
+        }
+        .tmdb-res-search:hover { color: var(--primary-hover); }
+        .tmdb-res-search:disabled { color: var(--text-300); cursor: default; }
+        .tmdb-res-search .fa-spinner { animation: tmdb-res-spin 0.9s linear infinite; }
+        @keyframes tmdb-res-spin { to { transform: rotate(360deg); } }
+
+        /* 条目列表 */
+        .tmdb-res-list { display: flex; flex-direction: column; gap: 6px; }
+        .tmdb-res-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 11px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--surface);
+            min-width: 0;
+        }
+        .tmdb-res-item-main { flex: 1 1 auto; min-width: 0; }
+        .tmdb-res-item-title {
+            font-size: var(--fs-label);
+            font-weight: 500;
+            line-height: 1.45;
+            color: var(--text-900);
+            /* 两行截断：标题长且规格信息在后半段，截一行会看不到体积/字幕 */
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+            overflow: hidden; word-break: break-word;
+        }
+        .tmdb-res-item-title a { color: inherit; text-decoration: none; }
+        .tmdb-res-item-title a:hover { color: var(--primary-hover); }
+        .tmdb-res-item-meta {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px;
+            margin-top: 4px;
+            font-size: 10.5px;
+            color: var(--text-400);
+        }
+        .tmdb-res-tag {
+            display: inline-block;
+            padding: 1px 7px;
+            border-radius: 999px;
+            background: var(--bg);
+            color: var(--text-500);
+            font-size: 10px;
+            line-height: 1.6;
+            white-space: nowrap;
+        }
+        .tmdb-res-size {
+            font-weight: 600;
+            color: var(--text-600);
+            white-space: nowrap;
+        }
+        /* 解锁按钮：描边式，消耗站点积分所以用警示色描边，不会误点成普通按钮 */
+        .tmdb-res-unlock {
+            flex: 0 0 auto;
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 6px 12px;
+            font-size: 11.5px; font-weight: 600;
+            color: var(--warning);
+            background: transparent;
+            border: 1px solid var(--warning);
+            border-radius: 999px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.18s, color 0.18s, opacity 0.18s;
+        }
+        .tmdb-res-unlock:hover { background: var(--warning); color: #fff; }
+        .tmdb-res-unlock:disabled { opacity: .55; cursor: default; }
+        .tmdb-res-unlock:disabled:hover { background: transparent; color: var(--warning); }
+        .tmdb-res-unlock.done { color: var(--success); border-color: var(--success); }
+        .tmdb-res-unlock.done:hover { background: transparent; color: var(--success); }
+
+        /* 解锁后展开的链接区 */
+        .tmdb-res-links {
+            margin-top: 7px; padding-top: 7px;
+            border-top: 1px dashed var(--border);
+            display: flex; flex-direction: column; gap: 5px;
+        }
+        .tmdb-res-link {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 11.5px;
+        }
+        .tmdb-res-link-pan {
+            flex: 0 0 auto;
+            padding: 1px 7px; border-radius: 999px;
+            background: var(--primary-light); color: var(--primary-hover);
+            font-size: 10px; font-weight: 600;
+        }
+        .tmdb-res-link-url {
+            flex: 1 1 auto; min-width: 0;
+            color: var(--primary-hover); text-decoration: none;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .tmdb-res-link-url:hover { text-decoration: underline; }
+        .tmdb-res-copy {
+            flex: 0 0 auto;
+            background: none; border: none; padding: 0 2px;
+            color: var(--text-400); cursor: pointer; font-size: 11px;
+        }
+        .tmdb-res-copy:hover { color: var(--primary-hover); }
+        .tmdb-res-note {
+            font-size: var(--fs-meta);
+            color: var(--text-400);
+            line-height: 1.6;
+            padding: 2px 0;
+        }
+        .tmdb-res-note.warn { color: var(--warning); }
+        .tmdb-res-note.error { color: var(--danger); }
         .tmdb-cast-item {
             width: 72px;
             text-align: center;
@@ -3396,7 +3524,181 @@
                         <button class="tmdb-modal-subscribe tmdb-modal-import${isTmdbSubscribed(mainTitle) ? ' subscribed' : ''}" data-title="${escapeHtml(mainTitle)}" onclick="subscribeTmdb(this.dataset.title, this)" title="${isTmdbSubscribed(mainTitle) ? '点击取消订阅' : '添加到频道监控选择关键词'}"><i class="fas fa-bell"></i> ${isTmdbSubscribed(mainTitle) ? '已订阅' : '订阅'}</button>
                         ${_channelTargetURL ? '<button class="tmdb-modal-subscribe tmdb-modal-import" onclick="channelDetailTransfer()" title="将当前频道分享链接立即转存到库"><i class="fas fa-download"></i> 立即入库</button>' : ''}
                     </div>
+                    ${renderResBlock(mainTitle, year)}
                 </div>`;
+        }
+
+        // ============ 详情页「资源」区块（123panfx 资源站） ============
+        //
+        // 交互契约（用户需求）：
+        //   - 不点「搜索」→ 一个字都不打资源站（初始只有标题行 + 搜索按钮，没有任何预取）；
+        //   - 不点「解锁」→ 后端不发任何写操作（解锁才发请求，且只在用户点击时发）。
+        //
+        // 因此这里刻意不做「进入详情页自动搜索」的优化：自动搜会违反第一条契约。
+        //
+        // 关于站点机制：123panfx 是「回复后再查看」，不是积分制。点解锁后后端会以配置
+        // 账号的身份在该帖下发一条预设快捷回复，隐藏的网盘链接随即可见；同一帖 24h 内
+        // 不重复回帖。按钮 title 必须如实写明这一点——回帖是公开可见的写操作。
+
+        // 最近一次搜索的条目，按 tid 索引 —— 解锁按钮要靠它回填链接区
+        let _resItems = {};
+
+        function renderResBlock(title, year) {
+            // 每次进详情都是全新一块：清掉上一部片的条目缓存，避免解锁回填串到别的片
+            _resItems = {};
+            const kw = (title || '').trim();
+            if (!kw) return '';
+            const yearHint = year ? `<span style="color:var(--text-400);font-weight:400;"> · ${escapeHtml(year)}</span>` : '';
+            return `<div class="tmdb-res-block">
+                <div class="tmdb-res-head">
+                    <span class="tmdb-res-title">资源${yearHint}</span>
+                    <button class="tmdb-res-search" data-kw="${escapeHtml(kw)}" data-year="${escapeHtml(year || '')}" onclick="searchRes(this)" title="在 123 资源站搜索该影视的资源（只读搜索，不会发帖）">
+                        <i class="fas fa-magnifying-glass"></i> 搜索
+                    </button>
+                </div>
+                <div class="tmdb-res-list" id="tmdb-res-list"></div>
+            </div>`;
+        }
+
+        // 搜索：用户点了才请求
+        async function searchRes(btn) {
+            const kw = btn.dataset.kw || '';
+            const list = document.getElementById('tmdb-res-list');
+            if (!list || !kw) return;
+            // 搜索中锁按钮，防连点（站点对高频请求不友好）
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner"></i> 搜索中';
+            list.innerHTML = '<div class="tmdb-res-note">正在搜索资源站…</div>';
+            try {
+                const q = new URLSearchParams({ keyword: kw });
+                if (btn.dataset.year) q.set('year', btn.dataset.year);
+                const data = await api('/api/panfx/search?' + q.toString());
+                if (!data.ok) {
+                    list.innerHTML = `<div class="tmdb-res-note error">${escapeHtml(data.error || '搜索失败')}</div>`;
+                    return;
+                }
+                _resItems = {};
+                (data.items || []).forEach(it => { _resItems[it.tid] = it; });
+                renderResList(list, data);
+            } catch (e) {
+                list.innerHTML = `<div class="tmdb-res-note error">搜索失败：${escapeHtml(e.message || '请求失败')}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-magnifying-glass"></i> 搜索';
+            }
+        }
+
+        function renderResList(list, data) {
+            const items = data.items || [];
+            if (!items.length) {
+                // 空结果给一条直达资源站的路径，比干瞪「未找到」有用
+                const link = data.search_url
+                    ? `<a href="${escapeHtml(data.search_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary-hover);">去资源站搜「${escapeHtml(data.keyword || '')}」</a>`
+                    : '';
+                list.innerHTML = `<div class="tmdb-res-note">未找到相关资源。${link}</div>`;
+                return;
+            }
+            list.innerHTML = items.map(it => renderResItem(it)).join('');
+        }
+
+        function renderResItem(it) {
+            // 标签最多展示 5 个：条目高度要稳，标签铺满会把解锁按钮挤到看不见
+            const tags = (it.tags || []).slice(0, 5)
+                .map(t => `<span class="tmdb-res-tag">${escapeHtml(t)}</span>`).join('');
+            const size = it.size ? `<span class="tmdb-res-size"><i class="fas fa-database"></i> ${escapeHtml(it.size)}</span>` : '';
+            const cms = it.comments ? `<span>${it.comments} 评论</span>` : '';
+            const date = it.date ? `<span>${escapeHtml(it.date)}</span>` : '';
+            return `<div class="tmdb-res-item" data-tid="${escapeHtml(it.tid)}">
+                <div class="tmdb-res-item-main">
+                    <div class="tmdb-res-item-title">
+                        <a href="${escapeHtml(it.url)}" target="_blank" rel="noopener noreferrer" title="打开资源站原帖">${escapeHtml(it.title)}</a>
+                    </div>
+                    <div class="tmdb-res-item-meta">${size}${tags}${date}${cms}</div>
+                    <div class="tmdb-res-links" hidden></div>
+                </div>
+                <button class="tmdb-res-unlock" onclick="unlockRes(this)" title="获取网盘链接（该站点要求回复可见，会以你配置的账号在该帖下发一条预设回复，公开可见）">
+                    <i class="fas fa-lock"></i> 解锁
+                </button>
+            </div>`;
+        }
+
+        // 解锁：用户点了才请求
+        // 后端在该帖下发一条预设回复（站点「回复可见」机制），随后抽取隐藏的网盘链接。
+        // 首次点会比较慢（发帖 + 重新取页），二次点同一帖直接读到已解锁内容。
+        async function unlockRes(btn) {
+            const row = btn.closest('.tmdb-res-item');
+            if (!row) return;
+            const tid = row.dataset.tid;
+            const box = row.querySelector('.tmdb-res-links');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner"></i> 解锁中';
+            try {
+                const data = await api('/api/panfx/unlock', 'POST', { tid: tid });
+                if (!data.ok) {
+                    showResMsg(box, data.error || '解锁失败', 'error');
+                    btn.innerHTML = '<i class="fas fa-lock"></i> 解锁';
+                    btn.disabled = false;
+                    return;
+                }
+                const r = data.result || {};
+                if (r.links && r.links.length) {
+                    box.hidden = false;
+                    // 如实告知这次到底发生了什么：是刚替他回了一帖，还是内容本来就已解锁
+                    const how = r.replied ? '已在该帖回复，链接已解锁' : '链接已获取';
+                    box.innerHTML = `<div class="tmdb-res-note">${how}</div>`
+                        + r.links.map(l => renderResLink(l)).join('');
+                    btn.className = 'tmdb-res-unlock done';
+                    btn.innerHTML = '<i class="fas fa-lock-open"></i> 已解锁';
+                    // 保持 disabled：链接已经拿到，不需要也不应该再点一次
+                    return;
+                }
+                // 没抽到链接：给原帖入口，让用户去站点自己看
+                const tip = r.message || '该资源需要在资源站查看';
+                showResMsg(box, tip + (r.url ? `　<a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">打开原帖</a>` : ''), 'warn');
+                btn.innerHTML = '<i class="fas fa-lock"></i> 解锁';
+                btn.disabled = false;
+            } catch (e) {
+                showResMsg(box, '解锁失败：' + (e.message || '请求失败'), 'error');
+                btn.innerHTML = '<i class="fas fa-lock"></i> 解锁';
+                btn.disabled = false;
+            }
+        }
+
+        function renderResLink(l) {
+            const pwd = l.pwd ? `<span class="tmdb-res-tag">提取码 ${escapeHtml(l.pwd)}</span>` : '';
+            return `<div class="tmdb-res-link">
+                <span class="tmdb-res-link-pan">${escapeHtml(l.pan || '网盘')}</span>
+                <a class="tmdb-res-link-url" href="${escapeHtml(l.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(l.url)}">${escapeHtml(l.url)}</a>
+                ${pwd}
+                <button class="tmdb-res-copy" onclick="copyResLink(this)" data-url="${escapeHtml(l.url)}${l.pwd ? ' 提取码 ' + escapeHtml(l.pwd) : ''}" title="复制链接"><i class="fas fa-copy"></i></button>
+            </div>`;
+        }
+
+        function showResMsg(box, html, kind) {
+            if (!box) return;
+            box.hidden = false;
+            box.innerHTML = `<div class="tmdb-res-note ${kind || ''}">${html}</div>`;
+        }
+
+        function copyResLink(btn) {
+            const text = btn.dataset.url || '';
+            const done = () => { btn.innerHTML = '<i class="fas fa-check"></i>'; setTimeout(() => { btn.innerHTML = '<i class="fas fa-copy"></i>'; }, 1400); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+                return;
+            }
+            fallbackCopy(text, done);
+        }
+
+        function fallbackCopy(text, done) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); done(); } catch (e) { /* 复制失败静默：链接本身可见可手动选 */ }
+            ta.remove();
         }
 
         function escapeHtml(value) {
@@ -4093,13 +4395,16 @@
             '用户配置': [
                 { title: '123 账号与密码', keys: ['ENV_123_CLIENT_ID', 'ENV_123_CLIENT_SECRET'], single: true },
                 { title: 'Telegram 通知', keys: ['ENV_TG_BOT_TOKEN', 'ENV_TG_ADMIN_USER_ID'], single: true },
+                { title: '影视资源（详情页「资源」解锁用）', keys: ['ENV_PANFX_COOKIE', 'ENV_PANFX_AUTO_REPLY', 'ENV_PANFX_REPLY_GAP'], single: true },
                 { title: '其他配置项', keys: ['ENV_KUAKE_COOKIE', 'ENV_TMDB_API_KEY'], single: true }
             ]
         };
         // 前端不再展示的配置项（功能仍保留，读 user.env 中的值）
-        const HIDDEN_KEYS = new Set(['ENV_DIY_LINK_PWD', 'ENV_AUTO_MAKE_JSON', 'ENV_MAKE_NEW_LINK']);
+        // ENV_PANFX_BASE 属高级项：站点域名换过一次（pan1.me / 123panfx.com），
+        // 普通使用不要暴露，改 user.env 即可。
+        const HIDDEN_KEYS = new Set(['ENV_DIY_LINK_PWD', 'ENV_AUTO_MAKE_JSON', 'ENV_MAKE_NEW_LINK', 'ENV_PANFX_BASE']);
         // 以明文显示（不隐藏）的敏感字段
-        const FORCE_TEXT_KEYS = new Set(['ENV_TG_BOT_TOKEN', 'ENV_KUAKE_COOKIE']);
+        const FORCE_TEXT_KEYS = new Set(['ENV_TG_BOT_TOKEN', 'ENV_KUAKE_COOKIE', 'ENV_PANFX_COOKIE']);
 
         // 去掉设置说明中括号内的内容
         function cleanLabel(c) {

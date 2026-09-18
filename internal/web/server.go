@@ -166,6 +166,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/media/episodes", s.authWrap(s.handleMediaEpisodes))
 	mux.HandleFunc("GET /api/media/calendar", s.authWrap(s.handleMediaCalendar))
 
+	// 资源站（123panfx）：详情页「资源」区块的搜索与解锁
+	mux.HandleFunc("GET /api/panfx/search", s.authWrap(s.handlePanfxSearch))
+	mux.HandleFunc("POST /api/panfx/unlock", s.authWrap(s.handlePanfxUnlock))
+
 	// 整理
 	mux.HandleFunc("GET /api/transfer/status", s.authWrap(s.handleTransferStatus))
 	mux.HandleFunc("GET /api/media/stats", s.authWrap(s.handleMediaStats))
