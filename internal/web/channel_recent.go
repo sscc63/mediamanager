@@ -133,24 +133,32 @@ var channelAlias = map[string]string{
 	"流人": "Slow Horses",
 }
 
-// channelSearchFirst 用标题搜索 TMDB，type 确定则只搜该类型，否则 movie/tv 都搜。
+// channelSearchFirst 用标题搜索 TMDB，最多 limit 条。
 // 优先「标题严格按影视名精确匹配」，其次「发布日期年份与识别年份一致」，二者皆不命中则返回空（不回退错配）。
 func channelSearchFirst(client *transfer.TmdbClient, title, year, mtype string) *transfer.TmdbListItem {
 	if a, ok := channelAlias[normTitle(title)]; ok && a != "" {
 		title = a
 	}
-	// 识别出类型就只搜该类型；识别不出（消息里既没有「类型：」行、也没有季集信息）才两个都搜，
-	// 否则剧集会被整个漏掉。命中结果自带 media_type，调用方据此决定详情走哪个接口。
+	// 识别出的类型只作「优先」，不作「排他」。
+	//
+	// 消息里的类型来自频道自己写的「🎭 类型：X剧/X电影」字段，本身并不可靠：
+	// 实测 A子计划(1986)、93航班(2006)、鬼上车(2026) 都被标成 tv，而它们在 TMDB
+	// 是电影 —— 旧逻辑 case "tv" 只搜 /search/tv，必然 0 条，于是这条记录永远
+	// 匹配不上、每次请求都白打一次搜索（与脏标题同一机制，都会让接口耗时线性增长）。
+	// 先搜识别出的类型，没有可用命中再拿另一类型兜底：命中结果自带 media_type，
+	// 调用方据此决定详情走哪个接口，所以兜底命中的电影不会被当成剧集展示。
 	var order []string
 	switch mtype {
 	case "tv":
-		order = []string{"tv"}
+		order = []string{"tv", "movie"}
 	case "movie":
-		order = []string{"movie"}
+		order = []string{"movie", "tv"}
 	default:
 		order = []string{"movie", "tv"}
 	}
-	// 汇总所有类型的候选，做一次统一的年份优先、再带海报回退
+	// 汇总所有类型的候选，做一次统一的年份优先、再带海报回退。
+	// 必须把两种类型的结果全部收齐再统一裁决：若按类型顺序「先搜到就返回」，
+	// 次类型里更准确的同名/同年份条目会被主类型里的错配结果抢先。
 	var all []transfer.TmdbListItem
 	for _, t := range order {
 		key := "channel:" + title + ":" + t
@@ -166,14 +174,34 @@ func channelSearchFirst(client *transfer.TmdbClient, title, year, mtype string) 
 			all = append(all, items...)
 		}
 	}
-	// 优先①：标题严格按影视名匹配（忽略大小写与标点空白），且带海报 —— 严格按影视名
+	return pickChannelMatch(all, title, year, mtype)
+}
+
+// pickChannelMatch 从候选里挑出最合适的一条（纯函数，便于单测）。
+// mtype 是识别出的类型，只用于「同分时优先」，不作排他 —— 见 channelSearchFirst 的说明。
+func pickChannelMatch(all []transfer.TmdbListItem, title, year, mtype string) *transfer.TmdbListItem {
+	want := normTitle(title)
+	// 优先①：标题严格按影视名匹配（忽略大小写与标点空白）且带海报，且类型与识别结果一致。
+	// 先按识别类型筛一轮，避免 movie/tv 同名作品串味（同名电影的 id 与剧集是两套独立空间，
+	// 拿错会让详情页显示成无关作品）。
 	for i := range all {
-		if all[i].PosterPath != "" && normTitle(all[i].Title) == normTitle(title) {
+		if all[i].PosterPath != "" && all[i].MediaType == mtype && normTitle(all[i].Title) == want {
 			return &all[i]
 		}
 	}
-	// 优先②：发布日期年份与识别年份一致且带海报（频道年份多为更新当季，仅作次级）
+	// 优先②：标题严格匹配且带海报，不限类型（识别出的类型本身可能是错的）
+	for i := range all {
+		if all[i].PosterPath != "" && normTitle(all[i].Title) == want {
+			return &all[i]
+		}
+	}
+	// 优先③：发布日期年份与识别年份一致且带海报，优先与识别类型一致者
 	if year != "" {
+		for i := range all {
+			if all[i].PosterPath != "" && all[i].MediaType == mtype && strings.HasPrefix(all[i].ReleaseDate, year) {
+				return &all[i]
+			}
+		}
 		for i := range all {
 			if all[i].PosterPath != "" && strings.HasPrefix(all[i].ReleaseDate, year) {
 				return &all[i]
