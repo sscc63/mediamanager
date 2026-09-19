@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,6 +72,92 @@ func TestChannelRecentWindowUsesPublishTime(t *testing.T) {
 	}
 	if got := countAll(t, db); got != 1 {
 		t.Errorf("清理后表内应剩 1 行，实际 %d 行", got)
+	}
+}
+
+// TestBackfillUseDate 老库补 usedate 列后必须回填，否则过期条目会靠 COALESCE 回退
+// 一直赖在 24h 窗口里（实测升级前入库的 66 条全部如此，最早的是 12 天前发布）。
+func TestBackfillUseDate(t *testing.T) {
+	dir, err := os.MkdirTemp("", "mmbot-backfill-")
+	if err != nil {
+		t.Fatalf("创建临时目录失败: %v", err)
+	}
+	path := filepath.Join(dir, "t.db")
+
+	// 先手工建一张「没有 usedate 列」的旧表，模拟升级前的库
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("打开裸库失败: %v", err)
+	}
+	_, err = raw.Exec(`CREATE TABLE messages (
+		msg_id INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, date TEXT, message_url TEXT,
+		target_url TEXT, transfer_status TEXT, transfer_time TEXT, transfer_result TEXT,
+		media_title TEXT, media_year TEXT, media_type TEXT, recognized_at TEXT, target_pid INTEGER)`)
+	if err != nil {
+		t.Fatalf("建旧表失败: %v", err)
+	}
+	now := time.Now()
+	oldPublish := now.Add(-12 * 24 * time.Hour)  // 12 天前发布
+	recentPublish := now.Add(-1 * time.Hour)     // 1 小时前发布
+	recog := now.Format("2006-01-02T15:04:05")   // 但都是「刚刚」入库的
+	ins := `INSERT INTO messages (date, message_url, transfer_status, transfer_time, media_title, recognized_at)
+		VALUES (?, ?, '转存成功', ?, ?, ?)`
+	if _, err := raw.Exec(ins, oldPublish.Format(time.RFC3339), "https://t.me/c/1", recog, "老片子", recog); err != nil {
+		t.Fatalf("插入老帖失败: %v", err)
+	}
+	if _, err := raw.Exec(ins, recentPublish.Format(time.RFC3339), "https://t.me/c/2", recog, "新片子", recog); err != nil {
+		t.Fatalf("插入新帖失败: %v", err)
+	}
+	// 一条 date 为空的（解析不了），回填后应保持为空、继续走回退。
+	// 这条同时把 target_url 留成 NULL：ListRecentWithTitle 必须 COALESCE 掉它，
+	// 否则 Scan 报错后该行会被静默跳过，表现为「条目莫名不出现在频道更新里」。
+	if _, err := raw.Exec(ins, "", "https://t.me/c/3", recog, "无时间戳", recog); err != nil {
+		t.Fatalf("插入空 date 失败: %v", err)
+	}
+	raw.Close()
+
+	// 经由 NewMessageDB 打开 → 补列 + 自动回填
+	db := NewMessageDB(path)
+	if db == nil || db.db == nil {
+		t.Fatal("打开库失败")
+	}
+
+	var filled int
+	if err := db.db.QueryRow(
+		"SELECT COUNT(*) FROM messages WHERE usedate <> ''").Scan(&filled); err != nil {
+		t.Fatalf("统计回填失败: %v", err)
+	}
+	if filled != 2 {
+		t.Errorf("应回填 2 条（老帖+新帖），实际 %d 条", filled)
+	}
+
+	// 关键断言：老帖回填后必须被逐出 24h 窗口
+	got := titles(db.ListRecentWithTitle(24, 30))
+	if len(got) != 2 {
+		t.Fatalf("窗口应剩 2 条（新帖 + 无时间戳回退），实际 %v", got)
+	}
+	found := map[string]bool{}
+	for _, g := range got {
+		found[g] = true
+	}
+	if found["老片子"] {
+		t.Errorf("12 天前发布的老帖回填后不应在窗口内，实际 %v", got)
+	}
+	if !found["新片子"] {
+		t.Errorf("1 小时前的新帖应保留，实际 %v", got)
+	}
+	if !found["无时间戳"] {
+		t.Errorf("date 为空的记录应靠回退保留，实际 %v", got)
+	}
+
+	// 重复调用不应重复回填（幂等）
+	db.backfillUseDate()
+	var again int
+	if err := db.db.QueryRow("SELECT COUNT(*) FROM messages WHERE usedate <> ''").Scan(&again); err != nil {
+		t.Fatalf("统计失败: %v", err)
+	}
+	if again != 2 {
+		t.Errorf("回填应幂等，实际 %d 条", again)
 	}
 }
 
