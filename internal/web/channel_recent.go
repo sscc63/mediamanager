@@ -35,8 +35,6 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 	limit := intQuery(r, "limit", 30)
 
 	msgDB := bot.NewMessageDB("")
-	// 实时删除超过 24 小时(默认窗口)的频道消息，避免过期条目堆积；删除后本次即不再返回
-	msgDB.CleanupRecentHours(channelRecentHours)
 	rows := msgDB.ListRecentWithTitle(hours, limit)
 
 	// TMDB 未配置时只回标题（前端用占位海报）
