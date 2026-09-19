@@ -62,10 +62,7 @@ var reChannelType = regexp.MustCompile(`类型[:：]\s*([^，,\n]+)`)
 //
 // 必须锚定在行首（^\s*）且限定这几个词：像「名侦探柯南：独眼的残像」「流浪地球：飞跃2020特别版」
 // 这种标题自带的冒号绝不能被削。允许「剧集 :」这种冒号前带空格、以及「剧集:」半角冒号的变体。
-//
-// 「名称」是 yun123pan 的写法（首行「名称：秘密访客」），词表里漏了它会让整频道搜不到
-// TMDB —— 标题前缀去不掉时 pickChannelMatch 的严格匹配必然失配（normTitle 只去标点空白，
-// 削不掉「名称」两个汉字），实测该频道 40 条全部 tmdb_id=0、接口里被整批丢弃。
+// 「名称」是 yun123pan 的写法，漏了它整个频道会搜不到 TMDB。
 var reChannelLabel = regexp.MustCompile(`^\s*(剧集|电影|动漫|综艺|纪录片|动画|电视剧|美剧|英剧|日剧|韩剧|国剧|港剧|台剧|名称)\s*[:：]\s*`)
 
 // reVideoMark 影视标记（🎬/🎥/🎞/📽/🎦）：bot 型频道把片名写在带这个标记的那一行。
@@ -143,60 +140,45 @@ func NewMessageDB(dbPath string) *MessageDB {
 	// 归一化后的消息发布时间（UTC 转本地、格式与 recognized_at 一致），24h 窗口与清理一律以它为准。
 	// date 列存的是 t.me 原始的 RFC3339(+00:00)，带时区后缀，不能直接与本地时间串比较。
 	m.ensureColumn("usedate", "TEXT")
-	// 老库补列后 usedate 全为 NULL，需回填一次；否则这些行会一直回退到 recognized_at（扫描时刻），
-	// 让早已过期的历史条目靠回退赖在 24h 窗口里（实测升级前入库的 66 条全部如此）。
+	// 老库 usedate 为 NULL 必须回填，否则会回退到 recognized_at 而被当成未过期。
 	m.backfillUseDate()
 	messageDBCache[dbPath] = m
 	return m
 }
 
-// backfillUseDate 把 usedate 为空的历史记录，从 date 列解析出真实发布时间回填。
-//
-// 只在启动建表后跑一次；没有待回填行时是零成本的一条 COUNT 查询。
-// 必须逐条读出来在 Go 侧解析 —— SQLite 的 strftime 处理不了 RFC3339 的 "+00:00" 后缀，
-// 而解析规则要与 Save() 时的 normalizeMsgTime 完全一致，只能在 Go 里复用同一个函数。
+// backfillUseDate 按 date 补齐 usedate，建表后跑一次。必须在 Go 侧做：SQLite 的 strftime
+// 支持不了 RFC3339 的 "+00:00" 后缀。必须先收齐再写：SetMaxOpenConns(1) 下 rows
+// 未关闭时 Exec 拿不到连接，会永久阻塞。
 func (m *MessageDB) backfillUseDate() {
 	if m == nil || m.db == nil {
 		return
 	}
-	var pending int
-	if err := m.db.QueryRow(
-		"SELECT COUNT(*) FROM messages WHERE (usedate IS NULL OR usedate = '') AND date <> ''",
-	).Scan(&pending); err != nil || pending == 0 {
-		return
-	}
-	// 先收齐再写：SetMaxOpenConns(1) 下 rows 未关闭时无法执行 Exec，会永久阻塞。
-	rows, err := m.db.Query(
-		"SELECT msg_id, date FROM messages WHERE (usedate IS NULL OR usedate = '') AND date <> ''")
+	rows, err := m.db.Query("SELECT msg_id, date FROM messages WHERE COALESCE(usedate,'') = '' AND date <> ''")
 	if err != nil {
 		log.Printf("[监控] usedate 回填查询失败: %v", err)
 		return
 	}
-	type pair struct {
-		id  int64
-		val string
-	}
-	var todo []pair
+	ids, vals, bad := []int64{}, []string{}, 0
 	for rows.Next() {
 		var id int64
 		var d string
-		if err := rows.Scan(&id, &d); err != nil {
+		if rows.Scan(&id, &d) != nil {
 			continue
 		}
 		if v := normalizeMsgTime(d); v != "" {
-			todo = append(todo, pair{id, v})
+			ids, vals = append(ids, id), append(vals, v)
+		} else {
+			bad++
 		}
 	}
 	rows.Close()
-
-	done := 0
-	for _, p := range todo {
-		if _, err := m.db.Exec("UPDATE messages SET usedate = ? WHERE msg_id = ?", p.val, p.id); err == nil {
-			done++
+	for i := range ids {
+		if _, err := m.db.Exec("UPDATE messages SET usedate = ? WHERE msg_id = ?", vals[i], ids[i]); err != nil {
+			return
 		}
 	}
-	if done > 0 {
-		log.Printf("[监控] 已回填 %d 条历史记录的发布时间(usedate)，其中 %d 条 date 无法解析", done, pending-done)
+	if len(ids) > 0 {
+		log.Printf("[监控] 已回填 %d 条 usedate（%d 条 date 无法解析）", len(ids), bad)
 	}
 }
 
@@ -320,9 +302,8 @@ func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
 	// 按它排等于把真实发布时间打乱（旧帖反而排到前面，还会先占满 limit 名额）。
 	// 但也不能直接按 usedate 排 —— usedate 为空的旧记录会因 SQLite 里 NULL < 任何值而永远垫底，
 	// 所以仍以回退表达式排序，并保留 transfer_time 兜底（同一秒内入库的按入库先后稳定排列）。
-	// target_url / transfer_time 必须 COALESCE：这两列在老库里可能为 NULL，
-	// 直接 Scan 进 string 会报错的记录会被静默跳过（不是查询失败，是逐行 continue），
-	// 表现为「某些条目莫名其妙不出现在频道更新里」。
+	// target_url/transfer_time/message_url 必须 COALESCE：老库里为 NULL 时 Scan 进 string
+	// 会报错，该行被静默跳过（err 为 nil、无日志）。
 	rows, err := m.db.Query(`SELECT media_title, COALESCE(media_year,''), COALESCE(media_type,''), COALESCE(message_url,''), COALESCE(transfer_time,''), COALESCE(target_url,''), COALESCE(target_pid,0), COALESCE(tmdb_id,0), COALESCE(poster_path,'')
 		FROM messages WHERE media_title <> '' AND COALESCE(NULLIF(usedate,''), recognized_at) >= ?
 		ORDER BY COALESCE(NULLIF(usedate,''), recognized_at) DESC, transfer_time DESC LIMIT ?`, since, limit)

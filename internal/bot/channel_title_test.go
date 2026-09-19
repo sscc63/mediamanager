@@ -40,8 +40,7 @@ func TestChannelCleanHeadStripsLabel(t *testing.T) {
 		{"SE7EN 七宗罪 (1995)", "SE7EN 七宗罪"},
 		{"S1m0ne 虚拟偶像 (2002)", "S1m0ne 虚拟偶像"},
 		// —— yun123pan 的「名称：」前缀（首行「名称：秘密访客」）——
-		// 该频道此前整批搜不到 TMDB：normTitle 只去标点空白、削不掉「名称」两个汉字，
-		// pickChannelMatch 的严格匹配必然失配 → 40 条全部 tmdb_id=0，接口里被整批丢弃。
+		// 前缀削不掉时 normTitle 严格匹配必然失配，整频道搜不到 TMDB。
 		{"名称：秘密访客", "秘密访客"},
 		{"名称：唐人街探案3", "唐人街探案3"},
 		{"名称：白蛇3：浮生", "白蛇3：浮生"},
