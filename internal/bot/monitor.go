@@ -149,8 +149,6 @@ func NewMessageDB(dbPath string) *MessageDB {
 // backfillUseDate 按 date 补齐 usedate，建表后跑一次。必须在 Go 侧做：SQLite 的 strftime
 // 支持不了 RFC3339 的 "+00:00" 后缀。必须先收齐再写：SetMaxOpenConns(1) 下 rows
 // 未关闭时 Exec 拿不到连接，会永久阻塞。
-// 必须包在单个事务里：逐条 Exec 每条 UPDATE 各 fsync 一次，千条级要跑几分钟，
-// 本函数同步执行、会阻塞首次频道扫描。
 func (m *MessageDB) backfillUseDate() {
 	if m == nil || m.db == nil {
 		return
@@ -174,34 +172,14 @@ func (m *MessageDB) backfillUseDate() {
 		}
 	}
 	rows.Close()
-	if len(ids) == 0 {
-		return
-	}
-	tx, err := m.db.Begin()
-	if err != nil {
-		log.Printf("[监控] usedate 回填开启事务失败: %v", err)
-		return
-	}
-	stmt, err := tx.Prepare("UPDATE messages SET usedate = ? WHERE msg_id = ?")
-	if err != nil {
-		tx.Rollback()
-		log.Printf("[监控] usedate 回填预编译失败: %v", err)
-		return
-	}
 	for i := range ids {
-		if _, err := stmt.Exec(vals[i], ids[i]); err != nil {
-			stmt.Close()
-			tx.Rollback()
-			log.Printf("[监控] usedate 回填失败，已回滚: %v", err)
+		if _, err := m.db.Exec("UPDATE messages SET usedate = ? WHERE msg_id = ?", vals[i], ids[i]); err != nil {
 			return
 		}
 	}
-	stmt.Close()
-	if err := tx.Commit(); err != nil {
-		log.Printf("[监控] usedate 回填提交失败: %v", err)
-		return
+	if len(ids) > 0 {
+		log.Printf("[监控] 已回填 %d 条 usedate（%d 条 date 无法解析）", len(ids), bad)
 	}
-	log.Printf("[监控] 已回填 %d 条 usedate（%d 条 date 无法解析）", len(ids), bad)
 }
 
 // ensureColumn 若列不存在则补齐（兼容已存在的 TG_monitor-123.db）。
