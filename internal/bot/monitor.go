@@ -113,6 +113,10 @@ func NewMessageDB(dbPath string) *MessageDB {
 	}
 	applySQLiteLimits(db)
 	m.db = db
+	// channel_cursor：每个频道已处理到的最高消息号（水位线），去重依据，不随时间清理。
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS channel_cursor (
+		channel TEXT PRIMARY KEY,
+		max_msg_id INTEGER)`)
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS messages (
 		msg_id INTEGER PRIMARY KEY AUTOINCREMENT,
 		id TEXT,
@@ -228,6 +232,46 @@ func (m *MessageDB) IsProcessed(messageURL string) bool {
 	var one int
 	err := m.db.QueryRow("SELECT 1 FROM messages WHERE message_url = ?", messageURL).Scan(&one)
 	return err == nil
+}
+
+// IsProcessedByCursor 频道水位线去重：消息号不超过该频道已处理到的最高号即视为已处理。
+// 与 IsProcessed 互补——messages 表会被 24h 清理删空，水位线不会，故频道页重列的旧消息也永不再处理。
+// 消息号解析失败时回退到 messages 表判断。
+func (m *MessageDB) IsProcessedByCursor(channel, msgID string) bool {
+	if m == nil || m.db == nil || channel == "" {
+		return false
+	}
+	if id, err := strconv.ParseInt(strings.TrimSpace(msgID), 10, 64); err == nil {
+		var max int64
+		err := m.db.QueryRow("SELECT COALESCE(max_msg_id,0) FROM channel_cursor WHERE channel = ?", channel).Scan(&max)
+		if err == nil && id <= max {
+			return true
+		}
+	}
+	return m.IsProcessed(messageURLFromID(channel, msgID))
+}
+
+// AdvanceCursor 推进频道水位线至已处理到的最高消息号（仅在更大时写入）。
+func (m *MessageDB) AdvanceCursor(channel, msgID string) {
+	if m == nil || m.db == nil || channel == "" {
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(msgID), 10, 64)
+	if err != nil {
+		return
+	}
+	_, _ = m.db.Exec(`INSERT INTO channel_cursor(channel, max_msg_id) VALUES(?, ?)
+		ON CONFLICT(channel) DO UPDATE SET max_msg_id = MAX(max_msg_id, excluded.max_msg_id)`, channel, id)
+}
+
+// messageURLFromID 由频道与消息号还原消息 URL（t.me 页面 URL 形式）。
+func messageURLFromID(channel, msgID string) string {
+	channel = strings.TrimSpace(channel)
+	// 兼容 /s/ 形式：还原回 t.me/<name>/<id>
+	if i := strings.Index(channel, "/s/"); i >= 0 {
+		channel = "https://t.me/" + strings.TrimPrefix(channel[i+3:], "/")
+	}
+	return strings.TrimRight(channel, "/") + "/" + msgID
 }
 
 // Save 记录/更新消息处理结果。targetPID 是本次扫描为该消息算出的目标目录，
@@ -605,20 +649,22 @@ func (b *Bot) checkChannel() int {
 					}
 					log.Printf("[监控] 已为URL添加提取码: %s", url)
 				}
-				if msgDB.IsProcessed(cm.MessageURL) {
+				if msgDB.IsProcessedByCursor(channelURL, cm.MessageID) {
 					log.Printf("[监控] 消息已处理，跳过")
 					continue
 				}
 				cm.TargetURL = url
 				b.processChannelMessage(cm, msgDB, excludeFilter, secondRules, defaultPID)
+				msgDB.AdvanceCursor(channelURL, cm.MessageID)
 				processed++
 			}
 			// 无 123 链接但消息未处理时也尝试秒传链接
 			if len(targetURLs) == 0 {
-				if msgDB.IsProcessed(cm.MessageURL) {
+				if msgDB.IsProcessedByCursor(channelURL, cm.MessageID) {
 					continue
 				}
 				b.processChannelMessage(cm, msgDB, excludeFilter, secondRules, defaultPID)
+				msgDB.AdvanceCursor(channelURL, cm.MessageID)
 				processed++
 			}
 		}

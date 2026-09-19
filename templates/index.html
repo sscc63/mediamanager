@@ -3447,7 +3447,8 @@
             const year = (d.release_date || '').slice(0, 4);
             const genres = (d.genres || []).join(' / ');
             const meta = [];
-            if (year) meta.push(year);
+            if (year) meta.push(year + ' · ' + (d.media_type === 'tv' ? '剧集' : '电影'));
+            else meta.push(d.media_type === 'tv' ? '剧集' : '电影');
             if (genres) meta.push(genres);                       // 类型放在年份后面
             if (d.runtime) meta.push(d.runtime + ' 分钟');
             if (d.status) meta.push(d.status);
