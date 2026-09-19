@@ -707,7 +707,8 @@ func (e *TransferExecutor) TransferResolved(ctx context.Context, fileID, fileNam
 
 // RetryWithTitle 手动重识别：用用户输入的片名/年份重新识别并复用统一整理管线救回失败文件。
 // 成功后把原 fail 历史行（rec.ID）原地更新为成功结果，避免残留双条。
-func (e *TransferExecutor) RetryWithTitle(ctx context.Context, rec HistoryRecord, title string, year int, mtype, transferType string) TransferResult {
+// out 非空时，成功结果会按批次聚合进 out（供最后统一走 STRM 联动与批量通知）。
+func (e *TransferExecutor) RetryWithTitle(ctx context.Context, rec HistoryRecord, title string, year int, mtype, transferType string, out *TransferStats) TransferResult {
 	fileID := rec.FileID
 	fileName := rec.FileName
 	if mtype == "" {
@@ -756,7 +757,42 @@ func (e *TransferExecutor) RetryWithTitle(ctx context.Context, rec HistoryRecord
 		Episode: int(rec.Episode.Int64),
 	}
 
-	return e.TransferResolved(ctx, fileID, fileName, rec.SourcePID, false, transferType, fileSize, nil, meta, m, nil, rec.ID)
+	res := e.TransferResolved(ctx, fileID, fileName, rec.SourcePID, false, transferType, fileSize, nil, meta, m, nil, rec.ID)
+
+	// 成功结果按批次聚合，统一在 FinalizeTransfer 里走 STRM 联动 + 正式模板通知
+	if out != nil && res.Success {
+		out.Success++
+		accumulateToGroups(out.Groups, res)
+	} else if out != nil {
+		out.Fail++
+		accumulateFailToGroups(out.Groups, res)
+	}
+	return res
+}
+
+// NewTransferStats 统一的整理统计容器构造（批量整理与手动重识别共用，避免重复）。
+func NewTransferStats() *TransferStats {
+	return &TransferStats{Groups: map[groupKey]*GroupSummary{}, Moved: map[string]bool{}}
+}
+
+// FinalizeTransfer 整理收尾：触发 STRM 联动与批量通知（与批量整理完成一致）。
+func (e *TransferExecutor) FinalizeTransfer(stats *TransferStats) {
+	if stats == nil {
+		return
+	}
+	if s := GetScheduler(); s != nil && s.OnTransferCompleted != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("手动识别联动 STRM 生成失败: %v", r)
+				}
+			}()
+			s.OnTransferCompleted(stats)
+		}()
+	}
+	if len(stats.Groups) > 0 {
+		e.sendBatchNotifications(stats.Groups)
+	}
 }
 
 // moveFile 重命名 + 移动。
@@ -792,7 +828,7 @@ func (e *TransferExecutor) TransferDirectory(ctx context.Context, sourcePID int,
 
 // transferDirectory 整理目录的实际实现；递归调用自身，不触发内存回收。
 func (e *TransferExecutor) transferDirectory(ctx context.Context, sourcePID int, recursive, force bool, scrape *bool, transferType string, sendNotify bool, dirNames []string) *TransferStats {
-	stats := &TransferStats{Groups: map[groupKey]*GroupSummary{}, Moved: map[string]bool{}}
+	stats := NewTransferStats()
 	if e.Client == nil {
 		log.Printf("整理目录失败: 123 客户端未初始化 (source_pid=%d)", sourcePID)
 		stats.FailList = append(stats.FailList, [2]string{strconv.Itoa(sourcePID), "123 客户端未初始化，请检查 ENV_123_CLIENT_ID/SECRET 配置"})

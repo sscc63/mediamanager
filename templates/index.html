@@ -1762,6 +1762,29 @@
             transition: background 0.18s;
         }
         .tmdb-modal-close:hover { background: rgba(255, 255, 255, 0.85); }
+        /* ============ 手动识别：iOS 式深色优雅弹窗 ============ */
+        .tmdb-modal.history-retry-modal { max-width: 420px; margin: auto; background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0) 42%), #1b1e27; border: 1px solid rgba(255,255,255,.09); border-radius: 22px; padding: 26px 24px 22px; }
+        .history-retry-modal .tmdb-modal-close { top: 16px; right: 16px; background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.08); color: #e4e4e7; }
+        .history-retry-title { font-size: 20px; font-weight: 700; letter-spacing: .01em; color: #fff; display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+        .history-retry-count { font-size: 12px; font-weight: 600; color: #a1a1aa; background: rgba(255,255,255,.09); padding: 4px 10px; border-radius: 999px; }
+        .history-retry-sub { font-size: 13.5px; color: #a1a1aa; line-height: 1.5; margin-bottom: 20px; }
+        .history-retry-field { margin-bottom: 16px; }
+        .history-retry-field label { display: block; font-size: 13px; font-weight: 600; color: #d4d4d8; margin-bottom: 8px; letter-spacing: .02em; }
+        .history-retry-field input { width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; font-size: 16px; color: #fff; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 14px 16px; outline: none; transition: border-color .18s, background .18s, box-shadow .18s; }
+        .history-retry-field input::placeholder { color: #71717a; }
+        .history-retry-field input:focus { border-color: var(--primary); background: rgba(255,255,255,.08); box-shadow: 0 0 0 4px rgba(99,102,241,.18); }
+        .history-retry-seg { display: flex; background: rgba(255,255,255,.06); padding: 4px; border-radius: 14px; }
+        .history-retry-seg button { flex: 1; border: none; background: transparent; color: #a1a1aa; font-size: 15px; font-weight: 600; padding: 11px 0; border-radius: 11px; cursor: pointer; -webkit-appearance: none; transition: background .2s, color .2s; }
+        .history-retry-seg button.active { background: #fff; color: #18181b; box-shadow: 0 1px 6px rgba(0,0,0,.3); }
+        .history-retry-hint { font-size: 12.5px; color: #8b8b94; line-height: 1.6; margin-top: 2px; }
+        .history-retry-foot { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+        .history-retry-foot button { border: none; font-size: 15px; font-weight: 600; padding: 13px 20px; border-radius: 14px; cursor: pointer; transition: transform .15s, opacity .2s; }
+        .history-retry-cancel { background: rgba(255,255,255,.08); color: #d4d4d8; }
+        .history-retry-cancel:hover { background: rgba(255,255,255,.13); }
+        .history-retry-ok { background: var(--primary); color: #fff; }
+        .history-retry-ok:hover { transform: translateY(-1px); }
+        .history-retry-ok:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+        @media (max-width: 768px) { .tmdb-modal.history-retry-modal { padding: 24px 20px 20px; } }
         .emby-modal { max-width: 1100px; }
         .emby-modal .card { box-shadow: none; margin-bottom: 0; border: none; }
         .emby-dup-actions {
@@ -5279,6 +5302,7 @@
         // ============ 手动识别：识别失败记录批量重识别 ============
         // 仅允许对 status='fail' 的记录操作，且批量所选须为同一类型（全部电影或全部电视剧）
         let _retryIds = [];
+        let _retryType = 'movie';
         function retryHistoryByIds() {
             const ids = Array.from(selectedHistoryIds);
             if (ids.length === 0) return;
@@ -5295,38 +5319,49 @@
             }
             const type = [...types][0] || 'movie';
             _retryIds = items.map(i => i.id);
+            _retryType = type;
+            const isTv = type === 'tv';
             openOverlay('history-retry-overlay', `
-                <div style="font-size:15px;font-weight:600;margin-bottom:14px;color:var(--text-0,#fff);">手动识别（${items.length} 条）</div>
-                <div style="margin-bottom:12px;">
-                    <div style="font-size:12px;color:var(--text-500);margin-bottom:6px;">片名</div>
-                    <input id="retry-title" placeholder="输入正式片名（必填）" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.06);color:var(--text-0,#fff);font-size:14px;outline:none;"/>
+                <div class="history-retry-title"><span>手动识别</span><span class="history-retry-count">${items.length} 条</span></div>
+                <div class="history-retry-sub">为识别失败的文件修正正式片名，重新识别后按原季集信息整理入库。</div>
+                <div class="history-retry-field">
+                    <label>片名</label>
+                    <input id="retry-title" placeholder="输入正式片名（必填）" autocomplete="off" />
                 </div>
-                <div style="margin-bottom:12px;">
-                    <div style="font-size:12px;color:var(--text-500);margin-bottom:6px;">年份</div>
-                    <input id="retry-year" type="number" placeholder="如 2024（可选）" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.06);color:var(--text-0,#fff);font-size:14px;outline:none;"/>
+                <div class="history-retry-field">
+                    <label>年份</label>
+                    <input id="retry-year" type="number" inputmode="numeric" placeholder="如 2024（可选）" />
                 </div>
-                <div style="margin-bottom:6px;">
-                    <div style="font-size:12px;color:var(--text-500);margin-bottom:6px;">类型</div>
-                    <select id="retry-type" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.16);background:rgba(24,24,27,0.9);color:var(--text-0,#fff);font-size:14px;outline:none;">
-                        <option value="movie" ${type==='movie'?'selected':''}>电影</option>
-                        <option value="tv" ${type==='tv'?'selected':''}>电视剧</option>
-                    </select>
+                <div class="history-retry-field">
+                    <label>类型</label>
+                    <div class="history-retry-seg">
+                        <button type="button" id="retry-type-movie" class="${isTv ? '' : 'active'}" onclick="pickRetryType('movie')">电影</button>
+                        <button type="button" id="retry-type-tv" class="${isTv ? 'active' : ''}" onclick="pickRetryType('tv')">电视剧</button>
+                    </div>
                 </div>
-                <div style="font-size:12px;color:var(--text-500);">按该片名/年份重查 TMDB，命中后按原季集信息整理入库；未命中将报错。</div>
-                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
-                    <button class="btn btn-tonal" onclick="closeOverlay('history-retry-overlay')">取消</button>
-                    <button class="btn btn-action" onclick="confirmHistoryRetry(this)">确认识别</button>
+                <div class="history-retry-hint">命中后按该片名对应的 TMDB 信息与原有季集整理入库；未命中将提示报错。</div>
+                <div class="history-retry-foot">
+                    <button type="button" class="history-retry-cancel" onclick="closeOverlay('history-retry-overlay')">取消</button>
+                    <button type="button" class="history-retry-ok" id="retry-ok" onclick="confirmHistoryRetry(this)">确认识别</button>
                 </div>
-            `);
+            `, 'history-retry-modal');
             const inp = document.getElementById('retry-title');
             if (inp) inp.focus();
+        }
+
+        function pickRetryType(t) {
+            _retryType = t;
+            ['movie', 'tv'].forEach(k => {
+                const b = document.getElementById('retry-type-' + k);
+                if (b) b.classList.toggle('active', k === t);
+            });
         }
 
         async function confirmHistoryRetry(btn) {
             const title = (document.getElementById('retry-title')?.value || '').trim();
             if (!title) { showTransferAlert('请填写片名', 'warning'); return; }
             const year = parseInt(document.getElementById('retry-year')?.value || '0', 10) || 0;
-            const type = document.getElementById('retry-type')?.value || '';
+            const type = _retryType || 'movie';
             if (btn) btn.disabled = true;
             try {
                 const r = await api('/api/transfer/history/retry', 'POST', {

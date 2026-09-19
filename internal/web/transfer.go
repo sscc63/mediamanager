@@ -571,6 +571,8 @@ func (s *Server) handleHistoryRetry(w http.ResponseWriter, r *http.Request) {
 
 	results := []map[string]any{}
 	okCount := 0
+	// 收集本次成功/失败结果，统一走 STRM 联动 + 正式模板通知（与批量整理收尾一致）
+	aggregated := transfer.NewTransferStats()
 	for _, rec := range records {
 		if rec.Status != "fail" {
 			results = append(results, map[string]any{
@@ -579,7 +581,7 @@ func (s *Server) handleHistoryRetry(w http.ResponseWriter, r *http.Request) {
 			})
 			continue
 		}
-		res := executor.RetryWithTitle(r.Context(), *rec, data.Title, data.Year, data.Type, data.TransferType)
+		res := executor.RetryWithTitle(r.Context(), *rec, data.Title, data.Year, data.Type, data.TransferType, aggregated)
 		if res.Success {
 			okCount++
 		}
@@ -595,6 +597,9 @@ func (s *Server) handleHistoryRetry(w http.ResponseWriter, r *http.Request) {
 			"id": rec.ID, "file_name": rec.FileName, "success": res.Success,
 			"skipped": res.Skipped, "message": msg, "media_title": res.MediaTitle,
 		})
+	}
+	if okCount > 0 {
+		executor.FinalizeTransfer(aggregated)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total":   len(records),
