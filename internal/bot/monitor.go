@@ -136,6 +136,9 @@ func NewMessageDB(dbPath string) *MessageDB {
 	// 频道更新 TMDB 持久化：查询首次命中后写回，之后直接读库不再实时搜；随 24h 清理整行删除
 	m.ensureColumn("tmdb_id", "INTEGER")
 	m.ensureColumn("poster_path", "TEXT")
+	// 归一化后的消息发布时间（UTC 转本地、格式与 recognized_at 一致），24h 窗口与清理一律以它为准。
+	// date 列存的是 t.me 原始的 RFC3339(+00:00)，带时区后缀，不能直接与本地时间串比较。
+	m.ensureColumn("usedate", "TEXT")
 	messageDBCache[dbPath] = m
 	return m
 }
@@ -194,14 +197,36 @@ func (m *MessageDB) Save(messageID, date, messageURL, targetURL, title, year, mt
 	if m == nil || m.db == nil || messageURL == "" {
 		return
 	}
-	now := time.Now().Format("2006-01-02T15:04:05")
+	now := time.Now()
+	ts := now.Format("2006-01-02T15:04:05")
+	// usedate 是「24h 窗口」的判定基准，取消息真实发布时间而不是扫描时刻。
+	// 否则每轮扫描都会给频道页上的历史条目刷新一次时间戳，三天前的帖子也会当新鲜内容展示。
+	ud := normalizeMsgTime(date)
 	// 与 Python 原版一致：纯 INSERT（id 非唯一约束，去重由调用方 IsProcessed 按 message_url 判断）
-	_, err := m.db.Exec(`INSERT INTO messages (id, date, message_url, target_url, transfer_status, transfer_time, transfer_result, media_title, media_year, media_type, recognized_at, target_pid)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		messageID, date, messageURL, targetURL, status, now, result, title, year, mtype, now, targetPID)
+	_, err := m.db.Exec(`INSERT INTO messages (id, date, usedate, message_url, target_url, transfer_status, transfer_time, transfer_result, media_title, media_year, media_type, recognized_at, target_pid)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		messageID, date, ud, messageURL, targetURL, status, ts, result, title, year, mtype, ts, targetPID)
 	if err != nil {
 		log.Printf("[监控] 保存消息记录失败: %v", err)
 	}
+}
+
+// normalizeMsgTime 把 t.me 的 RFC3339 发布时间（带时区，如 2026-09-16T14:58:29+00:00）
+// 转成本地时区的裸时间串，与 transfer_time/recognized_at 同格式，可直接做字符串比较。
+// 解析失败或缺失时留空，由调用方回退到扫描时刻。
+func normalizeMsgTime(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.Local().Format("2006-01-02T15:04:05")
+	}
+	// 兼容旧数据里可能存在的无时区写法（按本地时间理解）
+	if t, err := time.ParseInLocation("2006-01-02T15:04:05", s, time.Local); err == nil {
+		return t.Format("2006-01-02T15:04:05")
+	}
+	return ""
 }
 
 // ChannelRecent 频道近期更新影视（一条消息一行，含识别标题与持久化的 TMDB 映射）。
@@ -229,10 +254,18 @@ func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
 	if limit <= 0 {
 		limit = 30
 	}
-	since := time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15:04:05")
+	now := time.Now()
+	since := now.Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15:04:05")
+	// 以 usedate（消息真实发布时间）判窗口：recognized_at 只是扫描时刻，用它会让历史帖子
+	// 每轮扫描都被当成刚更新。usedate 为空的旧记录回退到 recognized_at，避免直接漏掉。
+	//
+	// 排序也必须用同一基准：transfer_time 是入库时刻。一轮扫描里整页消息是同一分钟入库的，
+	// 按它排等于把真实发布时间打乱（旧帖反而排到前面，还会先占满 limit 名额）。
+	// 但也不能直接按 usedate 排 —— usedate 为空的旧记录会因 SQLite 里 NULL < 任何值而永远垫底，
+	// 所以仍以回退表达式排序，并保留 transfer_time 兜底（同一秒内入库的按入库先后稳定排列）。
 	rows, err := m.db.Query(`SELECT media_title, COALESCE(media_year,''), COALESCE(media_type,''), message_url, transfer_time, target_url, COALESCE(target_pid,0), COALESCE(tmdb_id,0), COALESCE(poster_path,'')
-		FROM messages WHERE media_title <> '' AND recognized_at >= ?
-		ORDER BY transfer_time DESC LIMIT ?`, since, limit)
+		FROM messages WHERE media_title <> '' AND COALESCE(NULLIF(usedate,''), recognized_at) >= ?
+		ORDER BY COALESCE(NULLIF(usedate,''), recognized_at) DESC, transfer_time DESC LIMIT ?`, since, limit)
 	if err != nil {
 		log.Printf("[监控] ListRecentWithTitle 查询失败: %v", err)
 		return nil
@@ -298,8 +331,10 @@ func (m *MessageDB) Cleanup(retentionDays int) {
 	}
 }
 
-// CleanupRecentHours 删除超过指定小时数的频道消息记录（按识别时间 recognized_at 判定）。
-// 与 Cleanup 的区别：以识别时间为准，能覆盖未转存成功（transfer_time 为空）的已识别条目。
+// CleanupRecentHours 删除超过指定小时数的频道消息记录（按消息发布时间 usedate 判定）。
+// 与 Cleanup 的区别：以真实发布时间为准，能覆盖未转存成功（transfer_time 为空）的已识别条目；
+// 且判定基准与 ListRecentWithTitle 的窗口一致，避免「查得到但删不掉」的错位。
+// usedate 为空的旧记录回退到 recognized_at。
 func (m *MessageDB) CleanupRecentHours(hours int) {
 	if m == nil || m.db == nil {
 		return
@@ -308,7 +343,9 @@ func (m *MessageDB) CleanupRecentHours(hours int) {
 		hours = 24
 	}
 	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15:04:05")
-	res, err := m.db.Exec("DELETE FROM messages WHERE recognized_at <> '' AND recognized_at < ?", cutoff)
+	res, err := m.db.Exec(`DELETE FROM messages
+		WHERE COALESCE(NULLIF(usedate,''), recognized_at) <> ''
+		  AND COALESCE(NULLIF(usedate,''), recognized_at) < ?`, cutoff)
 	if err == nil {
 		if n, _ := res.RowsAffected(); n > 0 {
 			log.Printf("[监控] 已清理 %d 条 %d 小时前的频道消息记录", n, hours)
@@ -845,11 +882,14 @@ func (b *Bot) StartMonitor() {
 				b.monitorNext = time.Time{}
 			}
 			b.monitorMu.Unlock()
-			// 每日清理数据库记录
+			// 频道更新记录保留 24 小时：每轮都清一次。清理是按 usedate 走主键扫描的 DELETE，
+			// 成本可忽略；若沿用「24 小时才跑一次」，过期条目会一直滞留到下次清理，
+			// 且这一步只在用户打开首页请求 /api/monitor/recent 时才会被顺带触发。
+			edb := NewMessageDB("")
+			edb.CleanupRecentHours(24)
+			// 历史记录（默认 30 天）仍按天清理，避免每 3 分钟扫一次全表
 			if time.Since(lastCleanup) >= 24*time.Hour {
-				edb := NewMessageDB("")
 				edb.Cleanup(b.env.GetInt("ENV_DB_RETENTION_DAYS", 30))
-				edb.CleanupRecentHours(24) // 频道更新记录保留 24 小时
 				lastCleanup = time.Now()
 			}
 			// 一轮扫描的任务边界：此时频道页正文、消息列表、识别中间结果都已随 checkChannel
