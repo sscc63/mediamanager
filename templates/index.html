@@ -2731,13 +2731,19 @@
                     document.documentElement.scrollTop = 0;
                     document.body.scrollTop = 0;
                 }));
-                startUsagePolling();
-                startHistoryPolling();
                 if (!_trendRankLoaded['trendRankTrack']) loadTrendRank('movie', 'trendRankTrack');
                 if (!_trendRankLoaded['trendRankTrackTv']) loadTrendRank('tv', 'trendRankTrackTv');
                 if (!_maoyanRankLoaded['trendRankTrackMaoyan']) loadMaoyanRank('trendRankTrackMaoyan', 'tv');
                 if (!_maoyanRankLoaded['trendRankTrackMaoyanMovie']) loadMaoyanRank('trendRankTrackMaoyanMovie', 'movie');
                 if (!window._channelRankLoaded) { window._channelRankLoaded = true; loadChannelRank('trendRankTrackChannel'); }
+            }
+            // 首页与后台页共用的常驻数据：轮询 + 整理历史 + 媒体统计 + Emby 洗版状态。
+            // 必须同时覆盖 system 和 bg —— 这几项原先只挂在 system 分支里，
+            // 直接用 #bg 刷新时 switchTab('bg') 且 prevTab 为空，永远走不到，
+            // 表现为「后台页一刷新，整理历史和媒体信息拼接卡就没数据」。
+            if (tab === 'system' || tab === 'bg') {
+                startUsagePolling();
+                startHistoryPolling();
                 // history 仅首次进入时加载一次，之后由常驻轮询持续刷新，切换时不再重渲表格，避免跳动闪烁
                 if (!window._historyLoaded) {
                     window._historyLoaded = true;
@@ -2748,7 +2754,7 @@
                     loadEmbyStatus();
                     loadMediaStats();
                 }
-            } else if (tab !== 'bg') {
+            } else {
                 // 仅进入其它设置类/日志页时才停轮询；回到 system/bg 时继续常驻
                 stopUsagePolling();
                 stopHistoryPolling();
