@@ -5948,8 +5948,10 @@
                 });
             });
 
+            // 图例文字必须显式设深色：卡片底色是 75% 白，而 body 默认 color:#fff，
+            // 不设色就会继承成白字压在浅底上，几乎看不清（此前 home/root 发白就是这个原因）
             const legend = users.map((u, ui) =>
-                `<span style="display:inline-flex;align-items:center;margin-right:12px;font-size:12px;margin-bottom:4px;">
+                `<span style="display:inline-flex;align-items:center;margin-right:12px;font-size:12px;margin-bottom:4px;color:var(--text-900);">
                     <span style="width:10px;height:10px;border-radius:50%;background:${colors[ui % colors.length]};display:inline-block;margin-right:4px;"></span>${escapeHtml(u.name)}
                 </span>`).join('');
 
