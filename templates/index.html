@@ -637,7 +637,8 @@
         #tab-bg > .cards-row { grid-template-columns: minmax(0, 1fr); }
         #tab-bg #bg-cards-row { grid-template-columns: minmax(0, 1fr) 340px; }
         /* 后台 Tab 平铺卡片统一等距：子项间固定 16px（覆盖 .hero-search / .cards-row 各自散落 margin） */
-        #tab-bg > :not(:last-child) { margin-bottom: 16px; }
+        #tab-bg > :not(:last-child),
+        .bg-left-col > :not(:last-child) { margin-bottom: 16px; }
         /* 后台任务的两个卡片（桌面端并入「系统状态」Tab 整理历史上方）保持原两列布局 */
         @media (min-width: 769px) {
             /* 桌面端顶部工具栏：与移动端一致的横向布局，去侧栏后铺满全宽 */
@@ -722,17 +723,22 @@
                 align-items: start;
             }
             body:has(#tab-bg.active) #tab-bg > .hero-search { grid-column: 1 / -1; }
-            body:has(#tab-bg.active) #tab-bg > .sys-combo-card,
-            body:has(#tab-bg.active) #tab-bg > #bg-cards-row { grid-column: 1; }
-            /* 整理历史放右列，从第 2 行起跨 2 行（与左列「拼接卡 + bg-cards-row」整体对齐）。
-               必须显式写 grid-row，不能靠自动放置：grid 稀疏放置的光标只前进不回退，
-               搜索框跨列占 row 1、拼接卡和 bg-cards-row 依次占 row 2/row 3 后，
-               光标已停在 row 3，整理历史会被放到 row 3 col 2，即悬在右列半空。
-               另注：不要写 grid-row: 2 / -1 —— -1 指「显式网格」最后一条线，
-               此处未定义 grid-template-rows，显式网格只有 line 1，会退化成第 1 行。 */
-            body:has(#tab-bg.active) #tab-bg > #history-card { grid-column: 2; grid-row: 2 / span 2; }
+            /* 左列两块装进 .bg-left-col，共占一个单元格（row 2 col 1）：
+               此前各自占 row 2 / row 3，而右列整理历史跨这两行，其高度会被平均分摊到两行，
+               使 row 2 高过拼接卡本身、卡底留下空洞，看着像「Emby 卡没挨着拼接卡」。
+               装进容器后两列高度互不影响，卡内间距由容器自身 gap 决定。 */
+            body:has(#tab-bg.active) #tab-bg > .bg-left-col {
+                grid-column: 1;
+                grid-row: 2;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            /* 整理历史独占右列第 2 行（不再跨行，跨行的高度分摊会牵连左列）。 */
+            body:has(#tab-bg.active) #tab-bg > #history-card { grid-column: 2; grid-row: 2; }
             /* grid 行/列间距统一由 gap 控制；清掉基础规则的 margin-bottom 避免叠加成 32px */
-            body:has(#tab-bg.active) #tab-bg > :not(:last-child) { margin-bottom: 0; }
+            body:has(#tab-bg.active) #tab-bg > :not(:last-child),
+            body:has(#tab-bg.active) .bg-left-col > :not(:last-child) { margin-bottom: 0; }
             /* #bg-cards-row 在桌面端改成单列：Emby 上、后台任务下；间距继承 16px */
             body:has(#tab-bg.active) #tab-bg #bg-cards-row { grid-template-columns: minmax(0, 1fr); }
         }
@@ -2173,6 +2179,9 @@
                             <button class="scope-opt"      data-scope="logs"     type="button" onclick="scopePick('logs', this)">日志</button>
                         </div>
                     </div>
+                    <!-- 左列容器：拼接卡 + Emby/后台任务。桌面端靠它把两块锁在同一 grid 单元格内，
+                         高度只由自身内容决定，不被右列跨行的整理历史撑出等高空洞 -->
+                    <div class="bg-left-col">
                     <!-- 媒体信息 + 内存占用 合并卡 -->
                     <div class="card sys-combo-card">
                         <div class="combo-pane clickable-card emby-media-card" onclick="openEmbyModal()" role="button" title="打开媒体查重">
@@ -2212,6 +2221,7 @@
                                 <div style="color: var(--text-400); padding: 12px 0;"><span class="_spin" style="width:14px;height:14px;border-width:2px;" role="status" aria-label="加载中"></span></div>
                             </div>
                         </div>
+                    </div>
                     </div>
                     <!-- 整理历史 -->
                     <div class="card" id="history-card">
