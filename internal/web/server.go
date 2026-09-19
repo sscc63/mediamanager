@@ -179,6 +179,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/transfer/history", s.authWrap(s.handleTransferHistory))
 	mux.HandleFunc("DELETE /api/transfer/history/{id}", s.authWrap(s.handleTransferDeleteHistory))
 	mux.HandleFunc("POST /api/transfer/history/batch-delete", s.authWrap(s.handleTransferBatchDelete))
+	mux.HandleFunc("POST /api/transfer/history/retry", s.authWrap(s.handleHistoryRetry))
 	mux.HandleFunc("GET /api/transfer/categories", s.authWrap(s.handleTransferCategories))
 	mux.HandleFunc("GET /api/transfer/config", s.authWrap(s.handleTransferGetConfig))
 	mux.HandleFunc("POST /api/transfer/config", s.authWrap(s.handleTransferSaveConfig))

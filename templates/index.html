@@ -2162,6 +2162,8 @@
                                 <button class="history-batch-link warning" onclick="batchDeleteHistory(false)">删除历史</button>
                                 <span class="history-batch-sep">/</span>
                                 <button class="history-batch-link danger" onclick="batchDeleteHistory(true)">深度删除</button>
+                                <span class="history-batch-sep">/</span>
+                                <button class="history-batch-link" onclick="retryHistoryByIds()">手动识别</button>
                             </span>
                             <span class="history-title-label">整理历史</span>
                             <span class="history-batch-progress" style="display:none;margin-left:10px;color:var(--text-500);font-size:12px;">
@@ -4942,6 +4944,7 @@
         let historyKeyword = '';
         let historySelectMode = false;
         let selectedHistoryIds = new Set();
+        let _historyItemsCache = [];   // 最近一次历史渲染的行数据，供手动识别读取所选行的类型/状态
 
         async function loadHistory(page, silent) {
             if (page) historyPage = page;
@@ -4958,7 +4961,9 @@
                 }
                 if (!r.items || r.items.length === 0) {
                     body.innerHTML = `<div class="empty-row">暂无历史记录</div>`;
+                    _historyItemsCache = [];
                 } else {
+                    _historyItemsCache = r.items;
                     body.innerHTML = r.items.map(i => {
                         const time = (i.transfer_time || '').substring(0, 19).replace('T', ' · ');
                         const status = i.status === 'success'
@@ -5268,6 +5273,79 @@
                 if (progress) progress.style.display = 'none';
                 links.forEach(el => el.classList.remove('disabled'));
                 updateHistorySelection();
+            }
+        }
+
+        // ============ 手动识别：识别失败记录批量重识别 ============
+        // 仅允许对 status='fail' 的记录操作，且批量所选须为同一类型（全部电影或全部电视剧）
+        let _retryIds = [];
+        function retryHistoryByIds() {
+            const ids = Array.from(selectedHistoryIds);
+            if (ids.length === 0) return;
+            const items = _historyItemsCache.filter(i => ids.includes(i.id));
+            if (items.length === 0) { showTransferAlert('请先刷新列表再手动识别', 'warning'); return; }
+            if (items.some(i => i.status !== 'fail')) {
+                showTransferAlert('仅可对"识别失败"状态的记录手动识别，请只勾选状态为"失败"的条目', 'warning');
+                return;
+            }
+            const types = new Set(items.map(i => (i.media_type || 'movie').toLowerCase()));
+            if (types.size > 1) {
+                showTransferAlert('批量手动识别只能选择同一类型（全部为电影或全部为电视剧）', 'warning');
+                return;
+            }
+            const type = [...types][0] || 'movie';
+            _retryIds = items.map(i => i.id);
+            openOverlay('history-retry-overlay', `
+                <div style="font-size:15px;font-weight:600;margin-bottom:14px;color:var(--text-0,#fff);">手动识别（${items.length} 条）</div>
+                <div style="margin-bottom:12px;">
+                    <div style="font-size:12px;color:var(--text-500);margin-bottom:6px;">片名</div>
+                    <input id="retry-title" placeholder="输入正式片名（必填）" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.06);color:var(--text-0,#fff);font-size:14px;outline:none;"/>
+                </div>
+                <div style="margin-bottom:12px;">
+                    <div style="font-size:12px;color:var(--text-500);margin-bottom:6px;">年份</div>
+                    <input id="retry-year" type="number" placeholder="如 2024（可选）" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.06);color:var(--text-0,#fff);font-size:14px;outline:none;"/>
+                </div>
+                <div style="margin-bottom:6px;">
+                    <div style="font-size:12px;color:var(--text-500);margin-bottom:6px;">类型</div>
+                    <select id="retry-type" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.16);background:rgba(24,24,27,0.9);color:var(--text-0,#fff);font-size:14px;outline:none;">
+                        <option value="movie" ${type==='movie'?'selected':''}>电影</option>
+                        <option value="tv" ${type==='tv'?'selected':''}>电视剧</option>
+                    </select>
+                </div>
+                <div style="font-size:12px;color:var(--text-500);">按该片名/年份重查 TMDB，命中后按原季集信息整理入库；未命中将报错。</div>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
+                    <button class="btn btn-tonal" onclick="closeOverlay('history-retry-overlay')">取消</button>
+                    <button class="btn btn-action" onclick="confirmHistoryRetry(this)">确认识别</button>
+                </div>
+            `);
+            const inp = document.getElementById('retry-title');
+            if (inp) inp.focus();
+        }
+
+        async function confirmHistoryRetry(btn) {
+            const title = (document.getElementById('retry-title')?.value || '').trim();
+            if (!title) { showTransferAlert('请填写片名', 'warning'); return; }
+            const year = parseInt(document.getElementById('retry-year')?.value || '0', 10) || 0;
+            const type = document.getElementById('retry-type')?.value || '';
+            if (btn) btn.disabled = true;
+            try {
+                const r = await api('/api/transfer/history/retry', 'POST', {
+                    ids: _retryIds, title, year, type
+                });
+                const fails = (r.results || []).filter(x => !x.success);
+                let msg = `手动识别完成：${r.ok || 0}/${r.total || 0} 条成功`;
+                if (fails.length > 0) {
+                    const detail = fails.slice(0, 3).map(x => x.message).join('；');
+                    msg += `，${fails.length} 条未成功${detail ? '：' + detail : ''}`;
+                    showTransferAlert(msg, 'warning');
+                } else {
+                    showTransferAlert(msg, 'success');
+                }
+                closeOverlay('history-retry-overlay');
+                exitHistorySelect();
+            } catch (e) {
+                showTransferAlert('识别失败: ' + e.message, 'error');
+                if (btn) btn.disabled = false;
             }
         }
 

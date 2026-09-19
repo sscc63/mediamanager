@@ -480,20 +480,27 @@ func (e *TransferExecutor) TransferFile(ctx context.Context, fileID, fileName st
 		}
 	}
 
-	// 6. 无 TMDB 信息时降级构造
+	// 6. 识别失败：留在原地，不整理、不移动、不刮削。
+	// 写一条 fail 历史便于排查，且借用历史锁让自动重扫跳过；后续由用户手动识别救回。
 	if media == nil {
-		media = &MediaInfo{
-			Title:    meta.Name,
-			Year:     meta.Year,
-			Type:     meta.Type,
-			Category: "未分类",
-		}
-		if media.Type == "" {
-			media.Type = "movie"
-		}
+		msg := fmt.Sprintf("识别失败，未整理: %s", fileName)
+		log.Printf("%s", msg)
+		e.recordHistory(ctx, fileID, fileName, sourcePID, 0, "", nil, &meta, "fail", msg, transferType, fileSize)
+		return TransferResult{Message: msg, FileID: fileID, FileName: fileName, Meta: &meta}
 	}
 
-	// 6.5 同集去重检查
+	// 6.5 之后为统一整理管线（去重/目录/改名/移动/刮削/历史），供手动重识别复用。
+	return e.TransferResolved(ctx, fileID, fileName, sourcePID, force, transferType, fileSize, scrape, meta, media, stats, 0)
+}
+
+// TransferResolved 对已识别成功的 meta+media 执行统一整理管线（去重→目录→改名→移动→刮削→历史）。
+// historyUpdateID>0 时，历史写入改为原地更新该行（用于手动重识别，避免残留双条）。
+// meta 以值传入，内部沿用原有的 &meta 语义，保持与自动整理完全一致的路径/版本处理。
+func (e *TransferExecutor) TransferResolved(ctx context.Context, fileID, fileName string, sourcePID int, force bool, transferType string, fileSize int64, scrape *bool, meta MetaInfo, media *MediaInfo, stats *TransferStats, historyUpdateID int) TransferResult {
+	if scrape == nil {
+		s := e.EnableScrape
+		scrape = &s
+	}
 	mtype := media.Type
 	if mtype == "" {
 		mtype = meta.Type
@@ -620,7 +627,7 @@ func (e *TransferExecutor) TransferFile(ctx context.Context, fileID, fileName st
 	if err != nil {
 		msg := fmt.Sprintf("创建目标目录失败: %v", err)
 		log.Printf("%s", msg)
-		e.recordHistory(ctx, fileID, fileName, sourcePID, dirConf.LibraryPID, targetRelPath, media, &meta, "fail",
+		e.saveHistory(ctx, historyUpdateID, fileID, fileName, sourcePID, dirConf.LibraryPID, targetRelPath, media, &meta, "fail",
 			msg, effectiveTransferType, 0)
 		return TransferResult{Message: msg, FileID: fileID, FileName: fileName}
 	}
@@ -634,14 +641,14 @@ func (e *TransferExecutor) TransferFile(ctx context.Context, fileID, fileName st
 			log.Printf("%s", msg)
 			realFID := e.findTargetFileID(ctx, targetPID, newBasename, fileSize)
 			if realFID != "" {
-				e.recordHistory(ctx, realFID, fileName, sourcePID, targetPID, targetRelPath, media, &meta,
+				e.saveHistory(ctx, historyUpdateID, realFID, fileName, sourcePID, targetPID, targetRelPath, media, &meta,
 					"success", "", effectiveTransferType, fileSize)
 			}
 			return TransferResult{Message: msg, Skipped: true, FileID: fileID, FileName: fileName, Media: media, Meta: &meta}
 		}
 		msg := fmt.Sprintf("移动文件失败: %v", moveErr)
 		log.Printf("%s", msg)
-		e.recordHistory(ctx, fileID, fileName, sourcePID, targetPID, targetRelPath, media, &meta, "fail",
+		e.saveHistory(ctx, historyUpdateID, fileID, fileName, sourcePID, targetPID, targetRelPath, media, &meta, "fail",
 			msg, effectiveTransferType, 0)
 		return TransferResult{Message: msg, FileID: fileID, FileName: fileName, Media: media, Meta: &meta}
 	}
@@ -668,7 +675,7 @@ func (e *TransferExecutor) TransferFile(ctx context.Context, fileID, fileName st
 	if realFileID == "" {
 		realFileID = fileID
 	}
-	e.recordHistory(ctx, realFileID, fileName, sourcePID, targetPID, targetRelPath, media, &meta,
+	e.saveHistory(ctx, historyUpdateID, realFileID, fileName, sourcePID, targetPID, targetRelPath, media, &meta,
 		"success", "", effectiveTransferType, fileSize)
 
 	// 13. 文件大小
@@ -696,6 +703,60 @@ func (e *TransferExecutor) TransferFile(ctx context.Context, fileID, fileName st
 		Meta:       &meta,
 		FileSize:   fileSize,
 	}
+}
+
+// RetryWithTitle 手动重识别：用用户输入的片名/年份重新识别并复用统一整理管线救回失败文件。
+// 成功后把原 fail 历史行（rec.ID）原地更新为成功结果，避免残留双条。
+func (e *TransferExecutor) RetryWithTitle(ctx context.Context, rec HistoryRecord, title string, year int, mtype, transferType string) TransferResult {
+	fileID := rec.FileID
+	fileName := rec.FileName
+	if mtype == "" {
+		mtype = rec.MediaType
+	}
+	if mtype == "" {
+		mtype = "movie"
+	}
+	if transferType == "" {
+		transferType = rec.TransferType
+	}
+
+	if e.Client == nil {
+		return TransferResult{Message: "123 客户端未初始化", FileID: fileID, FileName: fileName}
+	}
+	if e.TMDB == nil {
+		return TransferResult{Message: "TMDB 未启用", FileID: fileID, FileName: fileName}
+	}
+
+	// 校验源文件仍存在（失败后文件留在源目录，用户可能隔几天才手动识别）
+	fileSize := rec.FileSize
+	if detail, err := e.Client.FSDetail(ctx, fileID); err != nil {
+		return TransferResult{Message: fmt.Sprintf("源文件已不存在，可能已被移动或删除: %v", err), FileID: fileID, FileName: fileName}
+	} else {
+		if detail.Size > 0 {
+			fileSize = detail.Size
+		}
+		if fileName == "" {
+			fileName = detail.FileName
+		}
+	}
+
+	// TMDB 识别（用人工输入，未命中则拒绝，不构造脏数据）
+	m := e.TMDB.Search(title, year, mtype)
+	if m == nil {
+		return TransferResult{Message: fmt.Sprintf("TMDB 无结果，请核对片名年份: %s (%d)", title, year), FileID: fileID, FileName: fileName}
+	}
+	m.Category = e.CatHelper.Match(m)
+
+	meta := MetaInfo{
+		Name:    title,
+		Year:    year,
+		Type:    mtype,
+		TMDBID:  m.TMDBID,
+		Season:  int(rec.Season.Int64),
+		Episode: int(rec.Episode.Int64),
+	}
+
+	return e.TransferResolved(ctx, fileID, fileName, rec.SourcePID, false, transferType, fileSize, nil, meta, m, nil, rec.ID)
 }
 
 // moveFile 重命名 + 移动。
@@ -1404,6 +1465,60 @@ func (e *TransferExecutor) findTargetFileID(ctx context.Context, pid int, filena
 	return ""
 }
 
+// buildHistoryRecord 由媒体/识别信息构造历史记录行（公共字段提取）。
+func (e *TransferExecutor) buildHistoryRecord(fileID, fileName string, sourcePID, targetPID int, targetPath string, media *MediaInfo, meta *MetaInfo, status, errorMsg, transferType string, fileSize int64) HistoryRecord {
+	mediaTitle, mediaYear, mediaType := "", "", ""
+	var tmdbID, season, episode sql.NullInt64
+	if media != nil {
+		mediaTitle = media.Title
+		mediaType = media.Type
+		if media.Year > 0 {
+			mediaYear = strconv.Itoa(media.Year)
+		}
+		if media.TMDBID > 0 {
+			tmdbID = sql.NullInt64{Valid: true, Int64: int64(media.TMDBID)}
+		}
+	}
+	if meta != nil {
+		if mediaTitle == "" {
+			mediaTitle = meta.Name
+		}
+		if mediaYear == "" && meta.Year > 0 {
+			mediaYear = strconv.Itoa(meta.Year)
+		}
+		if mediaType == "" {
+			mediaType = meta.Type
+		}
+		if meta.Season > 0 {
+			season = sql.NullInt64{Valid: true, Int64: int64(meta.Season)}
+		}
+		if meta.Episode > 0 {
+			episode = sql.NullInt64{Valid: true, Int64: int64(meta.Episode)}
+		}
+	}
+	if transferType == "" {
+		transferType = "move"
+	}
+	return HistoryRecord{
+		FileID:       fileID,
+		FileName:     fileName,
+		SourcePID:    sourcePID,
+		TargetPID:    targetPID,
+		TargetPath:   targetPath,
+		MediaTitle:   mediaTitle,
+		MediaYear:    mediaYear,
+		MediaType:    mediaType,
+		TMDBID:       tmdbID,
+		Season:       season,
+		Episode:      episode,
+		Status:       status,
+		ErrorMsg:     errorMsg,
+		TransferType: transferType,
+		FileSize:     fileSize,
+		Version:      e.versionScore(meta),
+	}
+}
+
 // recordHistory 记录历史（异常不阻塞主流程）。
 func (e *TransferExecutor) recordHistory(ctx context.Context, fileID, fileName string, sourcePID, targetPID int, targetPath string, media *MediaInfo, meta *MetaInfo, status, errorMsg, transferType string, fileSize int64) {
 	func() {
@@ -1412,56 +1527,24 @@ func (e *TransferExecutor) recordHistory(ctx context.Context, fileID, fileName s
 				log.Printf("写入历史记录失败: %v", r)
 			}
 		}()
-		mediaTitle, mediaYear, mediaType := "", "", ""
-		var tmdbID, season, episode sql.NullInt64
-		if media != nil {
-			mediaTitle = media.Title
-			mediaType = media.Type
-			if media.Year > 0 {
-				mediaYear = strconv.Itoa(media.Year)
+		e.History.Add(e.buildHistoryRecord(fileID, fileName, sourcePID, targetPID, targetPath, media, meta, status, errorMsg, transferType, fileSize))
+	}()
+}
+
+// saveHistory 写历史：historyUpdateID>0 时原地更新该行（手动重识别），否则新增一行。
+func (e *TransferExecutor) saveHistory(ctx context.Context, historyUpdateID int, fileID, fileName string, sourcePID, targetPID int, targetPath string, media *MediaInfo, meta *MetaInfo, status, errorMsg, transferType string, fileSize int64) {
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("更新历史记录失败: %v", r)
 			}
-			if media.TMDBID > 0 {
-				tmdbID = sql.NullInt64{Valid: true, Int64: int64(media.TMDBID)}
-			}
+		}()
+		rec := e.buildHistoryRecord(fileID, fileName, sourcePID, targetPID, targetPath, media, meta, status, errorMsg, transferType, fileSize)
+		if historyUpdateID > 0 {
+			e.History.UpdateByID(historyUpdateID, rec)
+		} else {
+			e.History.Add(rec)
 		}
-		if meta != nil {
-			if mediaTitle == "" {
-				mediaTitle = meta.Name
-			}
-			if mediaYear == "" && meta.Year > 0 {
-				mediaYear = strconv.Itoa(meta.Year)
-			}
-			if mediaType == "" {
-				mediaType = meta.Type
-			}
-			if meta.Season > 0 {
-				season = sql.NullInt64{Valid: true, Int64: int64(meta.Season)}
-			}
-			if meta.Episode > 0 {
-				episode = sql.NullInt64{Valid: true, Int64: int64(meta.Episode)}
-			}
-		}
-		if transferType == "" {
-			transferType = "move"
-		}
-		e.History.Add(HistoryRecord{
-			FileID:       fileID,
-			FileName:     fileName,
-			SourcePID:    sourcePID,
-			TargetPID:    targetPID,
-			TargetPath:   targetPath,
-			MediaTitle:   mediaTitle,
-			MediaYear:    mediaYear,
-			MediaType:    mediaType,
-			TMDBID:       tmdbID,
-			Season:       season,
-			Episode:      episode,
-			Status:       status,
-			ErrorMsg:     errorMsg,
-			TransferType: transferType,
-			FileSize:     fileSize,
-			Version:      e.versionScore(meta),
-		})
 	}()
 }
 

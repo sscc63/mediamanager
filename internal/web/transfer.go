@@ -534,3 +534,72 @@ func (s *Server) handleTransferBatchDelete(w http.ResponseWriter, r *http.Reques
 		"linked":  false,
 	})
 }
+
+// ---------- POST /api/transfer/history/retry ----------
+
+func (s *Server) handleHistoryRetry(w http.ResponseWriter, r *http.Request) {
+	var data struct {
+		IDs          []int  `json:"ids"`
+		Title        string `json:"title"`
+		Year         int    `json:"year"`
+		Type         string `json:"type"`
+		TransferType string `json:"transfer_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "无效请求"})
+		return
+	}
+	if len(data.IDs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未选择记录"})
+		return
+	}
+	if strings.TrimSpace(data.Title) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "请填写片名"})
+		return
+	}
+
+	executor := transfer.GetTransferExecutor()
+	if executor == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "整理功能未启用"})
+		return
+	}
+	records := executor.History.GetByIDs(data.IDs)
+	if len(records) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "未找到对应的记录（可能已被删除）"})
+		return
+	}
+
+	results := []map[string]any{}
+	okCount := 0
+	for _, rec := range records {
+		if rec.Status != "fail" {
+			results = append(results, map[string]any{
+				"id": rec.ID, "file_name": rec.FileName, "success": false,
+				"message": "仅识别失败记录可手动识别（当前状态: " + rec.Status + "）",
+			})
+			continue
+		}
+		res := executor.RetryWithTitle(r.Context(), *rec, data.Title, data.Year, data.Type, data.TransferType)
+		if res.Success {
+			okCount++
+		}
+		msg := res.Message
+		if msg == "" {
+			if res.Skipped {
+				msg = "跳过"
+			} else {
+				msg = "已整理"
+			}
+		}
+		results = append(results, map[string]any{
+			"id": rec.ID, "file_name": rec.FileName, "success": res.Success,
+			"skipped": res.Skipped, "message": msg, "media_title": res.MediaTitle,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"total":   len(records),
+		"ok":      okCount,
+		"fail":    len(records) - okCount,
+		"results": results,
+	})
+}

@@ -175,6 +175,22 @@ func (h *TransferHistory) Add(rec HistoryRecord) error {
 	return err
 }
 
+// UpdateByID 按主键 id 原地更新一条记录。
+// 用于手动重识别成功后，把原来的"识别失败"行直接改写为成功结果，避免残留双条记录。
+func (h *TransferHistory) UpdateByID(id int, rec HistoryRecord) error {
+	_, err := h.db.Exec(fmt.Sprintf(`UPDATE %s SET
+		file_id=?, file_name=?, source_pid=?, target_pid=?, target_path=?,
+		media_title=?, media_year=?, media_type=?, tmdb_id=?, season=?, episode=?,
+		status=?, error_msg=?, transfer_type=?, transfer_time=?, file_size=?, version=?
+		WHERE id=?`, historyTable),
+		rec.FileID, rec.FileName, rec.SourcePID, rec.TargetPID, rec.TargetPath,
+		rec.MediaTitle, rec.MediaYear, rec.MediaType,
+		nullInt64(rec.TMDBID), nullInt64(rec.Season), nullInt64(rec.Episode),
+		rec.Status, rec.ErrorMsg, rec.TransferType,
+		time.Now().Format(time.RFC3339), rec.FileSize, rec.Version, id)
+	return err
+}
+
 // FindSameEpisode 查询同一集已成功整理的历史记录。
 // tmdb_id 优先；查不到时 fallback 到 media_title，以命中 catalog 写入的无 tmdb_id 旧记录。
 func (h *TransferHistory) FindSameEpisode(tmdbID, season, episode int, mediaTitle string) []*HistoryRecord {
