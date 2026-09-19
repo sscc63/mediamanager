@@ -2091,6 +2091,15 @@
         .cfg-card:hover {
             background: rgba(238, 242, 255, 0.75);
         }
+        /* 浅底容器内把辅助文字档位提深：卡片实际底色是 75% 白（合成约 rgb(194,194,195)），
+           --text-400(#A1A1AA) 在上面只有 1.44:1 几乎看不见，提到 --text-500(#71717A) 为 2.72:1。
+           只在这些容器上重定义变量，深色区（页面底 / 弹窗挂在 body 下）不受影响。 */
+        .card,
+        .hero-search,
+        .loading-card,
+        .cfg-card {
+            --text-400: var(--text-500);
+        }
 
     </style>
 </head>
