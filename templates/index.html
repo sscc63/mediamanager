@@ -822,7 +822,7 @@
         #tab-system .entry-dots {
             position: absolute;
             left: 50%;
-            bottom: 2px;
+            bottom: -8px;   /* 负值 = 探出 .entry-poster 底边（容器 overflow:visible），落到海报渐隐区下方的出血段 */
             transform: translateX(-50%);
             z-index: 3;
             display: flex;
@@ -847,7 +847,7 @@
         /* 窗口外侧缩成小点，暗示该方向还有更多 */
         #tab-system .entry-dots .dot.edge { width: 4px; height: 4px; opacity: .5; }
         @media (min-width: 769px) {
-            #tab-system .entry-dots { bottom: 6px; }
+            #tab-system .entry-dots { bottom: -4px; }
         }
         .hero-search {
             position: relative;
