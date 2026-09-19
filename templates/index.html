@@ -675,7 +675,6 @@
                 background: transparent;
             }
             #tab-system .entry-carousel { min-height: 100vh; }
-            #tab-system .entry-card > img.entry-brand { bottom: 62px; }
             body:has(#tab-system.active) #tab-system .hero-search,
             body:has(#tab-system.active) #tab-system .sys-combo-card,
             body:has(#tab-system.active) #tab-system #history-card {
@@ -708,8 +707,34 @@
                 overflow-y: auto;
             }
             body:has(#tab-system.active) #tab-system .hero-search { z-index: 9; }
-            /* 桌面端去侧栏：内容区占满全宽 */
+            /* 桌面端去侧栏：内容区占满全宽（系统页海报铺满需要，但其他 Tab 不能跟着拉成扁纸条） */
             .content { max-width: none; }
+            /* 后台 Tab 单独限宽：4 张卡片不能跟着视口一起拉满，否则内部空旷比例失衡 */
+            body:has(#tab-bg.active) .content { max-width: 1200px; margin: 0 auto; }
+            /* 后台 Tab 桌面布局重构：搜索框横跨顶部，下方分两列
+               左(1fr)：拼接卡 + Emby 观看时长 + 后台任务（bg-cards-row 内部由两列改为上下堆叠）
+               右(400px)：整理历史（独立一列，长列表适合固定宽） */
+            body:has(#tab-bg.active) #tab-bg {
+                display: grid;
+                grid-template-columns: 400px minmax(0, 1fr);
+                column-gap: 16px;
+                row-gap: 16px;
+                align-items: start;
+            }
+            body:has(#tab-bg.active) #tab-bg > .hero-search { grid-column: 1 / -1; }
+            body:has(#tab-bg.active) #tab-bg > .sys-combo-card,
+            body:has(#tab-bg.active) #tab-bg > #bg-cards-row { grid-column: 1; }
+            /* 整理历史放右列，从第 2 行起跨 2 行（与左列「拼接卡 + bg-cards-row」整体对齐）。
+               必须显式写 grid-row，不能靠自动放置：grid 稀疏放置的光标只前进不回退，
+               搜索框跨列占 row 1、拼接卡和 bg-cards-row 依次占 row 2/row 3 后，
+               光标已停在 row 3，整理历史会被放到 row 3 col 2，即悬在右列半空。
+               另注：不要写 grid-row: 2 / -1 —— -1 指「显式网格」最后一条线，
+               此处未定义 grid-template-rows，显式网格只有 line 1，会退化成第 1 行。 */
+            body:has(#tab-bg.active) #tab-bg > #history-card { grid-column: 2; grid-row: 2 / span 2; }
+            /* grid 行/列间距统一由 gap 控制；清掉基础规则的 margin-bottom 避免叠加成 32px */
+            body:has(#tab-bg.active) #tab-bg > :not(:last-child) { margin-bottom: 0; }
+            /* #bg-cards-row 在桌面端改成单列：Emby 上、后台任务下；间距继承 16px */
+            body:has(#tab-bg.active) #tab-bg #bg-cards-row { grid-template-columns: minmax(0, 1fr); }
         }
         /* 订阅探索卡：单张横向海报，铺满整卡 */
         #tab-system .tmdb-entry-card { display: flex; flex-direction: column; }  /* flex 阻止外边距折叠，保证卡高由海报撑起 */
@@ -801,31 +826,38 @@
             object-fit: contain;
             filter: drop-shadow(0 2px 5px rgba(0,0,0,.42));
         }
-        /* 日期·类型·评分一行 + 简介两行（桌面端，徽标下方居中） */
+        /* 桌面端徽标抬高：让出下方两行文字的位置。
+           必须写在上面基础规则之后 —— 两条选择器特异性相同，靠源顺序取胜；
+           写在前面会被这里的 bottom:18px 覆盖掉（曾经踩过）。 */
+        @media (min-width: 769px) {
+            #tab-system .entry-card > img.entry-brand { bottom: 112px; }
+        }
+        /* 日期·类型·评分一行 + 简介两行（叠在海报上，底部居中）。
+           竖向自下而上：简介(34px 起，2 行) → 日期行(74px) → 徽标(桌面 112px)。 */
         #tab-system .entry-card > .entry-meta,
         #tab-system .entry-card > .entry-overview {
             position: absolute;
             left: 50%;
             transform: translateX(-50%);
             z-index: 2;
-            width: min(90%, 640px);
+            width: min(88%, 760px);
             margin: 0;
             text-align: center;
-            text-shadow: 0 1px 3px rgba(0,0,0,.6);
         }
         #tab-system .entry-card > .entry-meta {
-            bottom: 46px;
-            font-size: 8px;
-            font-weight: 400;
-            letter-spacing: .04em;
-            color: rgba(255,255,255,.65);
+            bottom: 74px;
+            font-size: 12.5px;
+            font-weight: 500;
+            letter-spacing: .06em;
+            color: rgba(255,255,255,.82);
+            text-shadow: 0 1px 6px rgba(0,0,0,.75);
         }
         #tab-system .entry-card > .entry-overview {
-            bottom: 12px;
-            font-size: 8px;
-            line-height: 1.4;
-            color: #fff;
-            text-shadow: none;
+            bottom: 34px;
+            font-size: 13px;
+            line-height: 1.55;
+            color: rgba(255,255,255,.92);
+            text-shadow: 0 1px 6px rgba(0,0,0,.75);
             overflow: hidden;
             display: -webkit-box;
             -webkit-line-clamp: 2;
@@ -2041,16 +2073,16 @@
         #tab-logs .notif-line { padding-left: 0; padding-right: 0; }
         #tab-logs .notif-line .m { -webkit-line-clamp: 2; }
 
-        /* ============ 全局卡片底色半透明：仅白色底 70%，卡片内文字/控件保持 100% 不透明 ============ */
+        /* ============ 全局卡片底色半透明：仅白色底 75%，卡片内文字/控件保持 100% 不透明 ============ */
         .card,
         .hero-search,
         .loading-card,
         .cfg-card {
-            background: rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.75);
         }
-        /* 配置卡 hover 底色同样降到 70%（与上方 .cfg-card:hover 同权重，置于其后生效） */
+        /* 配置卡 hover 底色同样降到 75%（与上方 .cfg-card:hover 同权重，置于其后生效） */
         .cfg-card:hover {
-            background: rgba(238, 242, 255, 0.7);
+            background: rgba(238, 242, 255, 0.75);
         }
 
     </style>
@@ -3281,7 +3313,6 @@
                 content.innerHTML = _contentPlaceholder('频道更新加载失败');
             }
         }
-        function refreshChannelUpdates() { _channelLoaded = false; _channelHtml = ''; showChannelUpdates(true); }
         // ============ 频道更新卡片：支持长按（或鼠标右键）弹出「立即入库」菜单 ============
         let _chPressTimer = null, _chLongResetTimer = null, _chPT = 0, _chPX = 0, _chPY = 0, _chLonged = false;
         let _channelTargetURL = '';
