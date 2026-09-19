@@ -13,11 +13,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        /* hidden 属性必须能压过元素自带的 display：作者样式（类选择器）优先级高于 UA 的 [hidden]{display:none}，
-           不补这条，带 hidden 的 flex 容器仍会占位，它的 border 就会常态显示成一条线 */
+        /* [hidden] 必须压过自带 display：作者样式（类选择器）优先级高于 UA，否则带 hidden 的 flex 容器仍占位、border 常态显示成一条线 */
         [hidden] { display: none !important; }
         :root {
-            /* MoviePilot / Material Design 调色板 */
             --primary: #6366F1;            /* indigo-500 */
             --primary-hover: #4F46E5;       /* indigo-600，contained 按钮 hover 色 */
             --primary-light: #EEF2FF;      /* indigo-50 */
@@ -51,7 +49,6 @@
 
             --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Roboto, 'Helvetica Neue', sans-serif;
 
-            /* 统一字阶：卡片标题 > 卡片副标题/配置分组 > 字段标签 > 辅助信息 */
             --fs-title: 15px;
             --fs-subtitle: 13.5px;
             --fs-label: 12px;
@@ -75,16 +72,14 @@
             text-rendering: optimizeLegibility;
             letter-spacing: 0.005em;
         }
-        /* 英雄底基础层：原移动/桌面两个 @media 里各有一份逐字节相同的拷贝，现合并为一条基础规则。
-           移动端仅保留下方 @max768 里的「超大模糊摊平」覆盖块（按源码顺序自然压过本条）。 */
+        /* 英雄底基础层：移动/桌面两份逐字节相同的拷贝合并为一条；移动端「超大模糊摊平」覆盖块保留在下方 @max768 */
         body::before {
             content: "";
             position: fixed;
             inset: -70px;
             z-index: 0;
             pointer-events: none;
-            /* 不透明底色 + 海报叠图：海报尚未解码时 background-image 是「有声明无像素」，
-               透明底会直接露出页面白色底 —— 叠一层深色基底，最坏情况也只是暗一下，不会闪白。 */
+            /* 不透明底色 + 海报叠图：图未解码时 background-image 有声明无像素，透明底会露白，叠深色基底最多暗一下不会闪白 */
             background-color: #0c0c10;
             background-image: var(--hero-bg, none);
             background-size: cover, cover;
@@ -170,8 +165,7 @@
             font-size: 20px;   /* 与工具栏图标一致 */
             font-weight: 600;
             letter-spacing: .04em;
-            /* 搜索标题要带出关键词，超长时省略号截断：标题是绝对居中的，
-               不设上限会横向溢出、压到左右两个 48px 图标按钮上 */
+            /* 搜索标题带出关键词，超长省略号截断：不设上限会横向溢出压到左右两个 48px 图标按钮 */
             max-width: calc(100% - 128px);
             overflow: hidden;
             text-overflow: ellipsis;
@@ -190,7 +184,6 @@
             -webkit-tap-highlight-color: transparent;
             padding: 0;
         }
-        /* 汉堡三横线：默认三条横线，点击后中间线消失，上下两线向中下收拢成尖端在下的 V */
         .ham-bars { display: inline-flex; flex-direction: column; justify-content: center; gap: 5px; transition: transform .32s cubic-bezier(.4,0,.2,1); }
         .ham-bar { display: block; width: 22px; height: 2.2px; border-radius: 2px; background: currentColor;
                    transition: transform .32s cubic-bezier(.4,0,.2,1), opacity .18s ease, width .2s ease; }
@@ -198,7 +191,6 @@
         #hamburgerBtn.open .ham-bar1 { transform-origin: center; transform: translateY(7px) rotate(-45deg); }
         #hamburgerBtn.open .ham-bar3 { transform-origin: center; transform: translateY(-7px) rotate(45deg); }
         #hamburgerBtn.open .ham-bar2 { opacity: 0; width: 0; }
-        /* 顶部工具行：默认态（汉堡/分段/日志） vs 编辑态（返回/空/保存） */
         #topToolbar:not(.mode-edit):not(.mode-log) .mode-edit-left,
         #topToolbar:not(.mode-edit):not(.mode-log) .mode-edit-right { display: none; }
         #topToolbar.mode-edit .mode-default-left,
@@ -206,12 +198,10 @@
         /* 按钮层级保证：避免兄弟元素（分段、搜索框、长页面元素）在特定滚动/阴影下遮挡触摸区域 */
         #topToolbar { position: sticky; z-index: 10; }   /* sticky，保持与状态栏磁吸，滚动时不随之滚走 */
         #hamburgerBtn, #topToolbar .back-btn, #topToolbar .logs-btn, #topToolbar .save-btn { position: relative; z-index: 20; }
-        /* logs 页面：顶部只显示左返回按钮（汉堡、后台、保存全隐藏） */
         #topToolbar.mode-log .hamburger-btn,
         #topToolbar.mode-log .logs-btn,
         #topToolbar.mode-log .save-btn { display: none !important; }
         #topToolbar.mode-log .back-btn { display: inline-flex !important; }
-        /* 日志按钮：默认隐藏，仅在后台页右侧显示（从汉堡移除后把日志入口放进后台工具栏） */
         .log-nav-btn { display: none; }
         body:has(#tab-bg.active) .log-nav-btn { display: inline-flex; }
         .drawer {
@@ -245,7 +235,6 @@
             opacity: 1;
             visibility: visible;
         }
-        /* 下拉选单：简洁纯文字行，去图标去选中高亮，仅 hover 柔化文字 */
         .nav-item {
             display: flex;
             align-items: center;
@@ -263,13 +252,11 @@
         }
         .nav-item:hover { color: var(--text-800); transform: translateX(3px); }
         .nav-item.active { color: var(--primary-hover); font-weight: 500; background: transparent; }
-        /* 分组分隔线：两端渐细 */
         .drawer-sep {
             height: 1px;
             margin: 6px 14px;
             background: linear-gradient(90deg, transparent, var(--border) 18%, var(--border) 82%, transparent);
         }
-        /* 重启系统：淡化红，保持克制 */
         .nav-item.nav-danger { color: rgba(220, 38, 38, 0.72); }
         .nav-item.nav-danger:hover { color: #B91C1C; }
 
@@ -282,12 +269,10 @@
         .tab-panel { display: none; animation: fadeIn 0.28s ease; }
         .tab-panel.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-        /* 系统/后台 切换：带方向的横向滑入动画（由 switchTab 依据切换方向添加对应 class） */
         @keyframes slideInL { from { opacity: 0; transform: translateX(-42px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes slideInR { from { opacity: 0; transform: translateX(42px); } to { opacity: 1; transform: translateX(0); } }
         .tab-panel.active.slide-l { animation: slideInL .34s cubic-bezier(0.2, 0.7, 0.2, 1); }
         .tab-panel.active.slide-r { animation: slideInR .34s cubic-bezier(0.2, 0.7, 0.2, 1); }
-        /* 手机端系统/后台：整屏滑动翻页（全宽平移 + 淡入，方向跟随切换方向；时长放慢更自然） */
         @keyframes slideInFullL { from { opacity: 0; transform: translateX(-100%); } to { opacity: 1; transform: translateX(0); } }
         @keyframes slideInFullR { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
         .tab-panel.active.slide-fl { animation: slideInFullL .44s cubic-bezier(0.16, 0.68, 0.22, 1); }
@@ -332,7 +317,6 @@
             background: transparent;
             color: #059669;
         }
-        /* 卡片标题行右侧的纯图标按钮：无背景，仅蓝色可点击图标 */
         .card-title-icon-btn {
             background: transparent;
             border: none;
@@ -353,9 +337,7 @@
             color: var(--primary-hover);
         }
         .clickable-card { cursor: pointer; }
-        /* 媒体信息分区：flex 列布局 */
         .emby-media-card { display: flex; flex-direction: column; position: relative; }
-        /* 媒体信息卡片底部中间：电影 / 电视剧 部数（同一行，原「上次扫描」位置） */
         .media-cap {
             position: absolute;
             left: 0; right: 0;
@@ -373,9 +355,7 @@
         .media-cap .mc-group { display: inline-flex; align-items: center; gap: 4px; }
         .media-cap .mc-num { font-weight: 400; color: var(--text-400); font-size: 9px; }
 
-        /* 卡片左上角悬浮标题（媒体信息 / 内存占用）：
-           字号/字重/颜色/字距与常规标题行 .card-title 完全一致（含移动端 15px 覆盖），
-           绝对定位悬浮于卡片左上角，不占内容行高；点击穿透，不挡整卡点击与图表交互 */
+        /* 卡片左上角悬浮标题：样式与 .card-title 一致，绝对定位不占行高，点击穿透不挡整卡点击与图表交互 */
         .card-float-title {
             position: absolute;
             top: 16px;            /* = #tab-system 卡内容区上边距，与「整理历史」标题同高 */
@@ -390,7 +370,6 @@
             z-index: 2;
         }
 
-        /* Toggle (Material switch) */
         .switch {
             display: inline-flex;
             align-items: center;
@@ -420,7 +399,6 @@
         .switch input:checked + .switch-track .switch-thumb { transform: translateX(20px); }
         .switch-label { font-size: var(--fs-label); color: var(--text-700); font-weight: 500; letter-spacing: 0.2px; }
 
-        /* 体积豁免：蓝色数字内联在「版本优先替换」标签里，点击弹出原生白框 */
         .ratio-label, .ratio-box { font-size: 14px; font-weight: 500; }
         .ratio-label { color: var(--text-700); }
         .ratio-box {
@@ -517,23 +495,18 @@
             gap: 14px;
             margin-bottom: 20px;
         }
-        /* 卡片自身的底部 margin 由 .cards-row 统一控制；下内边距 12px = 内容区下间距 */
         .cards-row .card { margin-bottom: 0; padding-bottom: 12px; }
         /* grid 项允许压缩，避免内容最小宽度把卡片撑出视口 */
         .cards-row > .card { min-width: 0; }
-        /* 标题行等高由 grid 行决定，高度自适应；下边距 8px + 各内容区上边距 10px = 内容区上间距 18px */
         .cards-row .card-title { margin-bottom: 8px; }
-        /* 系统状态 Tab：卡片与内容更融合 —— 边框更淡、收紧顶部留白、标题紧贴内容区 */
         #tab-system .card {
             padding-top: 16px;
         }
-        /* system tab title follows new global refined style */
         #tab-system .card-title {
             margin: 0 0 4px 0;
             padding: 0;
         }
-        /* 系统状态 Tab：订阅探索 / 搜索框 / 合并卡 统一单列堆叠，顺序固定为「订阅探索 → 搜索框 → 合并卡」，
-           手机与桌面完全一致（搜索框始终在订阅探索卡片之后，不再做手机端特例） */
+        /* 系统状态 Tab：订阅探索 → 搜索框 → 合并卡 单列堆叠且顺序固定，手机与桌面一致 */
         #tab-system .cards-row { grid-template-columns: minmax(0, 1fr); }
         #tab-system .cards-row > .tmdb-entry-card { order: 1; grid-column: 1 / -1; }
 
@@ -570,7 +543,6 @@
             width: 100%; aspect-ratio: 2/3; border-radius: 12px;
             object-fit: cover; background: rgba(127,127,127,.15); display: block;
         }
-        /* 榜单海报左上角排名序号：大字 + 渐变 */
         .trend-rank-num {
             position: absolute; top: 6px; left: 6px; z-index: 2;
             font-size: 28px; font-weight: 800; line-height: 1;
@@ -581,7 +553,6 @@
             font-variant-numeric: tabular-nums; letter-spacing: -1px;
         }
 
-        /* 订阅追剧：两个矩形圆角入口（已订阅 / 追剧日历），无 > 键 */
         .sub-gate {
             display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
             padding: 4px 10px 6px;   /* 压缩左右留白，让两个入口矩形加宽 */
@@ -596,7 +567,6 @@
             transition: background 0.18s, transform 0.18s;
         }
         .sub-gate-item:hover { background: rgba(255, 255, 255, 0.09); transform: translateY(-2px); }
-        /* 已订阅框：淡白底 + 黑字黑图标（仅左边第一个框） */
         .sub-gate-item:first-child {
             background: rgba(255, 255, 255, 0.5);
             border-color: rgba(255, 255, 255, 0.3);
@@ -626,22 +596,18 @@
         }
         .sys-combo-card .emby-media-card { padding: 16px 24px 12px; }
         .sys-combo-card .mem-card { padding: 16px 24px 8px; }
-        /* 中间长虚线：9px 长划 + 6px 间隔；上下各留 12px，不与卡边相连 */
         .sys-combo-card .combo-divider {
             flex: 0 0 1px;
             width: 1px;
             margin: 12px 0;
             background-image: repeating-linear-gradient(to bottom, var(--border-strong) 0 9px, transparent 9px 15px);
         }
-        /* 后台 Tab：搜索框 / 拼接卡 / 流水账 单列堆叠；仅 #bg-cards-row 内部两列（Emby 观看时长宽 + 后台任务 340px） */
         #tab-bg > .cards-row { grid-template-columns: minmax(0, 1fr); }
         #tab-bg #bg-cards-row { grid-template-columns: minmax(0, 1fr) 340px; }
         /* 后台 Tab 平铺卡片统一等距：子项间固定 16px（覆盖 .hero-search / .cards-row 各自散落 margin） */
         #tab-bg > :not(:last-child),
         .bg-left-col > :not(:last-child) { margin-bottom: 16px; }
-        /* 后台任务的两个卡片（桌面端并入「系统状态」Tab 整理历史上方）保持原两列布局 */
         @media (min-width: 769px) {
-            /* 桌面端顶部工具栏：与移动端一致的横向布局，去侧栏后铺满全宽 */
             .top-toolbar {
                 position: sticky;
                 top: 0;
@@ -651,7 +617,6 @@
                 justify-content: space-between;
                 padding: 6px 4px 4px;
             }
-            /* 桌面端系统页：海报铺满全屏首屏，其余卡片浮于其上（复用移动端沉浸式参数） */
             body:has(#tab-system.active) .top-toolbar {
                 position: absolute;
                 left: 0;
@@ -659,7 +624,6 @@
                 background: transparent;
                 pointer-events: none;
             }
-            /* 桌面端系统页：海报铺满全屏，搜索/拼接/整理历史三卡浮在左侧 1/4 列竖向叠放 */
             #tab-system { position: relative; }
             #tab-system .tmdb-entry-card.card {
                 position: relative;
@@ -712,9 +676,6 @@
             .content { max-width: none; }
             /* 后台 Tab 单独限宽：4 张卡片不能跟着视口一起拉满，否则内部空旷比例失衡 */
             body:has(#tab-bg.active) .content { max-width: 1200px; margin: 0 auto; }
-            /* 后台 Tab 桌面布局重构：搜索框横跨顶部，下方分两列
-               左(1fr)：拼接卡 + Emby 观看时长 + 后台任务（bg-cards-row 内部由两列改为上下堆叠）
-               右(400px)：整理历史（独立一列，长列表适合固定宽） */
             body:has(#tab-bg.active) #tab-bg {
                 display: grid;
                 grid-template-columns: 400px minmax(0, 1fr);
@@ -723,10 +684,6 @@
                 align-items: start;
             }
             body:has(#tab-bg.active) #tab-bg > .hero-search { grid-column: 1 / -1; }
-            /* 左列两块装进 .bg-left-col，共占一个单元格（row 2 col 1）：
-               此前各自占 row 2 / row 3，而右列整理历史跨这两行，其高度会被平均分摊到两行，
-               使 row 2 高过拼接卡本身、卡底留下空洞，看着像「Emby 卡没挨着拼接卡」。
-               装进容器后两列高度互不影响，卡内间距由容器自身 gap 决定。 */
             body:has(#tab-bg.active) #tab-bg > .bg-left-col {
                 grid-column: 1;
                 grid-row: 2;
@@ -739,10 +696,8 @@
             /* grid 行/列间距统一由 gap 控制；清掉基础规则的 margin-bottom 避免叠加成 32px */
             body:has(#tab-bg.active) #tab-bg > :not(:last-child),
             body:has(#tab-bg.active) .bg-left-col > :not(:last-child) { margin-bottom: 0; }
-            /* #bg-cards-row 在桌面端改成单列：Emby 上、后台任务下；间距继承 16px */
             body:has(#tab-bg.active) #tab-bg #bg-cards-row { grid-template-columns: minmax(0, 1fr); }
         }
-        /* 订阅探索卡：单张横向海报，铺满整卡 */
         #tab-system .tmdb-entry-card { display: flex; flex-direction: column; }  /* flex 阻止外边距折叠，保证卡高由海报撑起 */
         #tab-system .tmdb-entry-card.card {
             position: relative;      /* 箭头 absolute 的锚点 */
@@ -768,7 +723,6 @@
             overflow: visible;
             box-sizing: border-box;
         }
-        /* 单张横向海报轮播，其他海报隐藏 */
         #tab-system .entry-carousel {
             position: relative;
             width: 100%;
@@ -780,18 +734,14 @@
             inset: 0;
             opacity: 0;
             pointer-events: none;
-            /* .45s 太长：中间有将近半秒是「旧图已淡出、新图还没出来」的窗口期。
-               图已预解码的情况下 .22s 足够顺滑，观感上也更像「切」而不是「闪」 */
+            /* .45s 太长：旧图已淡出、新图未到的空窗近半秒；图已预解码时 .22s 足够顺滑 */
             transition: opacity .22s ease;
         }
         #tab-system .entry-carousel .entry-card.active {
             opacity: 1;
             pointer-events: auto;
         }
-        /* 跟手拖动中：临时摘掉过渡，让 opacity 直接等于手指进度。
-           不摘的话每写一帧 opacity 都会被 .22s 过渡拖住，手指划完了画面还在追，
-           观感就成了「延迟跟随」而不是跟手。松手时移除本类，恢复过渡做吸附收尾。
-           只对卡片本身生效——文字/徽标是卡片的子元素，随卡片整体淡化，无需单独处理。 */
+        /* 跟手拖动中摘掉过渡，让 opacity 直接等于手指进度；不摘会被 .22s 拖住变成延迟跟随，松手移除本类恢复过渡 */
         #tab-system .entry-carousel.dragging .entry-card {
             transition: none;
         }
@@ -832,14 +782,10 @@
             object-fit: contain;
             filter: drop-shadow(0 2px 5px rgba(0,0,0,.42));
         }
-        /* 桌面端徽标抬高：让出下方两行文字的位置。
-           必须写在上面基础规则之后 —— 两条选择器特异性相同，靠源顺序取胜；
-           写在前面会被这里的 bottom:18px 覆盖掉（曾经踩过）。 */
+        /* 桌面端徽标抬高必须写在基础规则之后：两条选择器特异性相同靠源顺序取胜，写前面会被 bottom:18px 覆盖 */
         @media (min-width: 769px) {
             #tab-system .entry-card > img.entry-brand { bottom: 112px; }
         }
-        /* 日期·类型·评分一行 + 简介两行（叠在海报上，底部居中）。
-           竖向自下而上：简介(34px 起，2 行) → 日期行(74px) → 徽标(桌面 112px)。 */
         #tab-system .entry-card > .entry-meta,
         #tab-system .entry-card > .entry-overview {
             position: absolute;
@@ -869,7 +815,6 @@
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
         }
-        /* 通用搜索框（对齐截图样式） */
         .hero-search {
             position: relative;
             display: flex; align-items: center;
@@ -895,7 +840,6 @@
         .hero-search .hero-search-input::placeholder { color: var(--text-400); }
 
 
-        /* 搜索多功能图标 + 作用域菜单：右侧图标点击弹出「影视/整理」 */
         .search-filter {
             margin-left: 10px;
             flex-shrink: 0;
@@ -910,7 +854,6 @@
         }
         .search-filter:hover { color: var(--primary); background: rgba(99,102,241,0.08); }
         .search-filter:active { opacity: .7; }
-        /* 作用域下拉菜单 */
         .scope-menu {
             position: absolute;
             top: calc(100% + 6px);
@@ -967,9 +910,7 @@
         #history-card .card-title { margin-bottom: 12px; }
 
         /* ============ 内存占用分区（合并卡内右半） ============ */
-        /* 分区为 flex 列，图表撑满标题下方剩余空间；下侧内边距单独收紧（默认 12px → 8px） */
         .mem-card { display: flex; flex-direction: column; padding-bottom: 8px; }
-        /* 图表居中（与媒体信息圆环同尺寸），数值叠在图表正中，说明文字在图表正下方 */
         .mem-body {
             flex: 1;
             display: flex;
@@ -991,7 +932,6 @@
             min-height: 0;
             display: block;
         }
-        /* 数值信息：固定在分区右上角（mem-card 为 relative），不占图表区布局 */
         .mem-center {
             position: absolute;
             inset: auto 14px auto auto;   /* 右上角：上/右 14px */
@@ -1002,7 +942,6 @@
             pointer-events: none;   /* 不挡图表交互 */
         }
         /* 「内存占用」标题为左上角悬浮 .card-float-title，分区保持 relative 供其定位 */
-        /* 数字字体与媒体信息圆环容量数字一致：UI 无衬线 700，去等宽/去数字特排 */
         .mem-kpi-value {
             font-size: 25px;
             font-weight: 700;
@@ -1014,7 +953,6 @@
             font-weight: 500;
             color: var(--text-400);
         }
-        /* 版本优先替换 chips */
         .pv-chips {
             display: flex;
             flex-wrap: wrap;
@@ -1065,7 +1003,6 @@
             opacity: 0.45;
             pointer-events: none;
         }
-        /* 版本优先替换内嵌分组 */
         .pv-box {
             margin-top: 2px;
             padding: 14px 16px;
@@ -1102,7 +1039,6 @@
         .history-table tbody tr:last-child td { border-bottom: none; }
         .history-table tbody tr:hover { background: rgba(99, 102, 241, 0.05); }
         .empty-row { text-align: center; color: var(--text-400); padding: 28px !important; }
-        /* 历史标题栏多选批量操作：无背景、显眼纯文字按钮 */
         .history-batch-actions { align-items: center; }
         .history-batch-link {
             background: none; border: none; padding: 0; cursor: pointer;
@@ -1114,12 +1050,10 @@
         .history-batch-sep { color: var(--text-400); font-size: var(--fs-title); line-height: 1.2; }
         .history-batch-link:hover:not(.disabled) { text-decoration: underline; }
         .history-batch-link.disabled { opacity: 0.4; cursor: not-allowed; text-decoration: none; }
-        /* 多选 checkbox：放大便于点击选中 */
         .history-table input[type="checkbox"] {
             width: 18px; height: 18px; cursor: pointer;
             accent-color: var(--primary); vertical-align: middle; margin: 0;
         }
-        /* 整理历史：去掉表头，内容区改为「后台任务」式的一行一行列表 */
         .history-list { display: flex; flex-direction: column; }
         .history-row { padding: 11px 0 9px; border-bottom: 1px solid var(--border); }
         .history-row:last-child { border-bottom: none; }
@@ -1131,11 +1065,9 @@
         .history-row-sub { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-width: 0; }
         .history-row-meta { font-size: 11px; color: var(--text-400); white-space: nowrap; flex-shrink: 0; }
         .history-row-sub .chip { margin-left: auto; flex-shrink: 0; }
-        /* 整理位置：与类型/状态同行，占中间剩余宽度并省略号截断 */
         .history-row-path { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--text-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .history-select-all { display: flex; align-items: center; gap: 8px; padding: 0 0 8px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-500); }
         .history-wrap input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); margin: 0; flex-shrink: 0; }
-        /* 后台任务卡片内：每项一行（名称+倒计时），下方弱化状态标签；倒计时醒目 */
         .bg-task-row { padding: 11px 0 9px; border-bottom: 1px solid var(--border); }
         .bg-task-row:last-child { border-bottom: none; padding-bottom: 2px; }
         .bg-task-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -1226,12 +1158,8 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         /* ============ 统一加载指示器（inline） ============ */
-        /* 静态「加载中...」文字升级为旋转环形图标。纯 CSS、无外部依赖、不额外发请求。
-           与 .spinner 的分工：.spinner 是全屏遮罩（#loading）里 40px 居中大圆环，
-           本类则是贴在文字前的 inline 小图标（横滑条 14px / 全屏占位 22px），随文字基线对齐。
-           两者共用同一个 @keyframes spin，不重复定义关键帧。
-           border-top/right 透明 + 其余 currentColor，形成缺口圆弧；currentColor 让它自动跟随
-           父级文字颜色（横滑条的弱化灰、全屏占位的白色都能直接用）。 */
+        /* 静态「加载中...」升级为旋转环形图标：纯 CSS，与 .spinner（全屏遮罩 40px 大圆环）分工，本类是 inline 小图标，共用 @keyframes spin
+           border-top/right 透明 + 其余 currentColor 形成缺口圆弧并自动跟随父级文字颜色 */
         ._spin {
             display: inline-block;
             box-sizing: border-box;
@@ -1310,7 +1238,6 @@
             letter-spacing: 0.2px;
             margin-bottom: 6px;
         }
-        /* 行内开关：文字在左、开关在右 */
         .group-row {
             display: flex;
             align-items: center;
@@ -1328,7 +1255,6 @@
         }
         .group-card .switch { display: flex; }
         .group-card .cfg-card-head { margin-bottom: 2px; }
-        /* 上下排列的分组卡片：字段单列、贴底对齐 */
         .group-card.single-col .group-grid {
             display: flex;
             flex-direction: column;
@@ -1341,7 +1267,6 @@
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
         .form-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-bottom: 16px; }
         .form-row > .form-group { margin-bottom: 0; }
-        /* 用户配置分组卡片内：字段标签更小更淡、间距更紧凑 */
         .group-card .form-group { margin-bottom: 10px; }
         .group-card .form-group > label {
             font-size: var(--fs-label);
@@ -1416,7 +1341,6 @@
         /* ============ Responsive ============ */
         @media (max-width: 768px) {
             .btn { padding: 0 14px; font-size: 13px; height: 36px; }
-            /* 移动端默认工具栏保持原有布局；系统页切换为海报上的悬浮层 */
             .top-toolbar {
                 position: sticky;
                 top: 0;
@@ -1435,8 +1359,7 @@
                 background: transparent;
                 pointer-events: none;
             }
-            /* 手机端搜索框：回到文档流常驻显示（不再脱流吸顶、不随手势隐藏）；
-               位置经下方 order 规则排到订阅探索海报卡之后 */
+            /* 手机端搜索框回到文档流常驻显示（不再脱流吸顶）；位置由下方 order 规则排到订阅探索海报卡之后 */
             .hero-search {
                 position: relative;
                 margin: 0;
@@ -1444,19 +1367,15 @@
             .hero-search .hero-search-input {
                 font-size: 16px;              /* 移动端字号≥16px，禁用 iOS 聚焦自动放大页面的效果 */
             }
-            /* 移动端：下拉选单纯文字，简洁无分区 */
             .content {
                 overflow-x: clip;                       /* 裁掉横向溢出但不产生滚动容器，保证 sticky 生效 */
                 padding: 0 16px 24px;                   /* 顶部留白由 toolbar 的 safe-area padding 承担 */
             }
-            /* 移动端：趋势榜横滑海报条全出血（轨道延伸到屏边，抵消 .content 的 16px 内边距；
-               左内边距对齐标题、右内边距极小，末张海报可一路滑到屏幕右缘） */
             .trend-rank { margin-top: 0; }        /* 收窄首页海报简介与下方「频道更新」标题的间距 */
             .trend-rank-head { padding: 0 16px; }
             .trend-rank-track { margin: 0 -16px; padding: 8px 16px 5px; }
             .card { padding: 16px; }
             /* 移动端：订阅海报改为顶栏下方、竖向 2:3 纯海报；出血方式与之前一致（全宽出血铺满、无圆角、cover 裁切） */
-            /* 移动端：底层用无字海报超大模糊，视觉摊平成主色调纯色层 */
             body::before {
                 background-color: #0c0c10;
                 background-image: var(--hero-bg, none);
@@ -1490,20 +1409,17 @@
                 box-shadow: none;
             }
             #tab-system .entry-carousel { width: 100%; height: 100%; min-height: 0; }
-            /* 纯海报：去掉竖向向下淡出遮罩（保留底部影视名称徽标） */
             #tab-system .entry-card > img:not(.entry-brand) {
                 -webkit-mask-image: none;
                 mask-image: none;
                 object-position: center;   /* 不强制贴顶：出血上拉截的是海报上方留白，保住人物头部 */
             }
-            /* 移动端：影视徽标放大 1.5 倍，上移给下方信息留位 */
             #tab-system .entry-card > img.entry-brand {
                 width: min(78%, 324px);
                 height: auto;
                 max-height: 97px;
                 bottom: 88px;
             }
-            /* 移动端：上映日期·类型·评分一行 */
             #tab-system .entry-card > .entry-meta {
                 position: absolute;
                 left: 20px; right: 20px;
@@ -1518,7 +1434,6 @@
                 text-shadow: 0 1px 3px rgba(0,0,0,.6);
                 z-index: 2;
             }
-            /* 移动端：简介两行 */
             #tab-system .entry-card > .entry-overview {
                 position: absolute;
                 left: 24px; right: 24px;
@@ -1542,7 +1457,6 @@
                 z-index: 6;
             }
             .cards-row { grid-template-columns: minmax(0, 1fr); }
-            /* 移动端：合并卡两分区内边距随 .card 统一收至 16px */
             .sys-combo-card .emby-media-card { padding: 16px 16px 12px; }
             .sys-combo-card .mem-card { padding: 16px 16px 8px; }
             #tab-bg > .cards-row,
@@ -1550,19 +1464,15 @@
             .cfg-grid { grid-template-columns: 1fr; }
             .form-row { grid-template-columns: 1fr; gap: 14px; }
             .notification { right: 12px; left: 12px; max-width: none; top: calc(16px + env(safe-area-inset-top)); }
-            /* 移动端：放大 switch 开关尺寸，更易点击 */
             .switch-track { width: 56px; height: 30px; border-radius: 15px; }
             .switch-thumb { width: 24px; height: 24px; top: 3px; left: 3px; }
             .switch input:checked + .switch-track .switch-thumb { transform: translateX(26px); }
             .switch-label { font-size: 15px; }
-            /* 移动端：体积豁免标签/数值与版本优先同字号 */
             .ratio-label, .ratio-box { font-size: 15px; }
-            /* 移动端：放大三个操作按钮字号 */
             .btn-action { font-size: 15px; }
             /* 移动端保持清晰的四级字阶，避免标题、分组和字段标签大小混成一档 */
             .card-title { font-size: 15px; line-height: 1.3; }
             .card-title .hint { font-size: 11px; }
-            /* 左上角悬浮标题：移动端随 .card-title 缩至 15px，左边距对齐移动端 .card padding */
             .card-float-title { font-size: 15px; left: 16px; }
             .cfg-card-label { font-size: 13px; line-height: 1.35; }
             .group-label { font-size: 12px; line-height: 1.35; }
@@ -1575,8 +1485,7 @@
         }
 
         /* ============ TMDB 影视榜单 ============ */
-        /* 订阅探索入口海报：尺寸/布局由 #tab-system .tmdb-entry-poster（更高特异性）全权接管，
-           此处只保留交互属性（唯一不会被上层覆盖的部分） */
+        /* 订阅探索入口海报：尺寸/布局由 #tab-system .tmdb-entry-poster 全权接管，此处只保留交互属性 */
         .tmdb-entry-poster {
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -1589,9 +1498,7 @@
             display: block;
         }
         /* ============ 订阅探索 / 海报详情：整页 Tab（替代原全屏弹层） ============ */
-        /* 页内返回条：手机端由顶部工具栏返回键承担（下方 ≤768px 媒体查询隐藏）；
-           桌面端「订阅探索」页也不再显示返回按钮（下方 ≥769px 媒体查询隐藏）——桌面有左侧导航，
-           返回系统状态直接点导航项即可，避免同一入口重复出现 */
+        /* 页内返回条手机端与桌面端都隐藏（分别由顶部返回键、左侧导航承担），避免同一入口重复出现 */
         .tmdb-back {
             display: inline-flex;
             align-items: center;
@@ -1609,16 +1516,11 @@
         .tmdb-back i { font-size: 12px; }
         /* 页内返回条在手机端隐藏：返回由顶部工具栏返回键承担（须置于基础规则之后，避免被覆盖） */
         @media (max-width: 768px) { .tmdb-back { display: none; } }
-        /* 桌面端隐藏「订阅探索」页左上角「返回系统」：返回入口收敛到左侧导航（Esc 仍可逐级返回） */
         @media (min-width: 769px) { #tab-tmdb .tmdb-back { display: none; } }
         /* 整页卡片容器：与其他 Tab 页一致（半透明底由全局 .card 覆盖层统一给定） */
         .tmdb-page { min-height: 220px; }
-        /* 订阅探索：海报网格 3 列平铺。不用负边距全出血（会被 .content 的 overflow-x 裁掉右侧），
-   改为网格自身留 2px 微距，靠间距保证整齐不错乱 */
         #tmdb-content { margin: 0; padding: 0 2px; }
-        /* 详情页：不用卡片，直铺在页面上（透明底、无圆角、无阴影） */
         .tmdb-detail-page { padding: 0; overflow: hidden; }
-        /* 详情 hero：桌面固定高度 cover 裁剪，手机沿用弹层时代的 contain（可看全图） */
         .tmdb-detail-page .tmdb-modal-hero { min-height: 0; }
         .tmdb-detail-page .tmdb-modal-hero img { width: 100%; height: 380px; object-fit: cover; }
         @media (max-width: 768px) {
@@ -1820,10 +1722,8 @@
             transition: background 0.18s;
         }
         .tmdb-modal-close:hover { background: rgba(255, 255, 255, 0.85); }
-        /* 媒体查重弹窗：复用 tmdb 弹窗基建，加宽以容纳结果表格 */
         .emby-modal { max-width: 1100px; }
         .emby-modal .card { box-shadow: none; margin-bottom: 0; border: none; }
-        /* 弹窗中间操作区：开始扫描按钮/扫描中加载，水平居中 */
         .emby-dup-actions {
             display: flex;
             justify-content: center;
@@ -1860,7 +1760,6 @@
             gap: 0 4px;              /* 收紧间隔：`·` 前后不再有大段留白 */
         }
         .tmdb-modal-meta .tmdb-meta-dot { margin: 0 6px; opacity: .45; }
-        /* 标题行：片名 + 内联订阅按钮 */
         .tmdb-modal-title {
             display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
             margin-top: -6px;            /* 上移，贴合海报 */
@@ -1918,13 +1817,9 @@
             gap: 10px;
         }
         /* ============ 详情页「资源」区块（123panfx 资源站） ============ */
-        /* 搜索按钮已上移到「订阅」/「立即入库」同一行（见 renderTmdbDetail 的按钮行），
-           样式直接复用 .tmdb-modal-subscribe.tmdb-modal-import，此处只保留旋转动画，
-           以及资源区块自身的位置与标题样式。 */
         @keyframes tmdb-res-spin { to { transform: rotate(360deg); } }
         .tmdb-modal-subscribe .fa-spinner { animation: tmdb-res-spin 0.9s linear infinite; }
 
-        /* 资源区块：直接铺在详情卡里，跟「整理记录」一致 —— 行式列表，不用外框卡片 */
         .tmdb-res-block { margin-top: 14px; }
         .tmdb-res-head {
             display: flex; align-items: baseline; justify-content: space-between;
@@ -1936,7 +1831,6 @@
         .tmdb-res-head-count b { color: #18181b; font-weight: 600; }
 
         .tmdb-res-list { display: flex; flex-direction: column; }
-        /* 每行：顶行 = 标题 + 右侧解锁按钮；次行 = 体积/日期/评论/标签 chip */
         .tmdb-res-item {
             padding: 11px 0 9px;
             border-bottom: 1px solid var(--border);
@@ -1952,7 +1846,6 @@
         }
         .tmdb-res-item-title a { color: inherit; text-decoration: none; }
         .tmdb-res-item-title a:hover { color: var(--primary-hover); }
-        /* 解锁按钮：行尾右对齐，悬停时背景变白 */
         .tmdb-res-unlock {
             flex: 0 0 auto; margin-left: auto;
             display: inline-flex; align-items: center; gap: 4px;
@@ -1969,7 +1862,6 @@
         .tmdb-res-unlock.done { background: var(--success-soft); color: var(--success); border-color: transparent; }
         .tmdb-res-unlock.done:hover { background: var(--success-soft); color: var(--success); }
 
-        /* 次行：体积加粗 + 小分隔点 + 日期/评论/标签 */
         .tmdb-res-item-meta {
             display: flex; align-items: center; gap: 6px;
             margin-top: 5px;
@@ -1984,13 +1876,11 @@
             background: #F1F5F9; color: var(--text-500);
             font-size: 11px; line-height: 1.6;
         }
-        /* 清晰度/版本类标签用品牌色突出：挑资源时第一眼看的就是这个 */
         .tmdb-res-tag.hi {
             background: var(--primary-light); color: var(--primary-hover);
             font-weight: 600;
         }
 
-        /* 解锁后展开的链接区：跟「整理记录」一致，用虚线把链接划成单独一格 */
         .tmdb-res-links {
             margin-top: 8px; padding-top: 8px;
             border-top: 1px dashed var(--border);
@@ -2065,8 +1955,6 @@
             -webkit-line-clamp: 1;
             overflow: hidden; color: var(--text-700);
         }
-        /* 超长日志行：点击展开/收起全文。展开时重置为块级布局，
-           脱离 -webkit-box/line-clamp（移动端 WebView 残留截断会显示不全） */
         .notif-line.expandable { cursor: pointer; }
         .notif-line.expandable .m::after { content: ' ⋯'; color: var(--primary); }
         .notif-line.expanded .m {
@@ -2076,24 +1964,20 @@
             overflow: visible;
         }
         .notif-line.expanded .m::after { content: ''; }
-        /* 移动端日志页：内容默认最多 2 行，展开后完整显示；行左右对齐卡片 24px 内边距（与标题对齐） */
         #tab-logs .notif-line { padding-left: 0; padding-right: 0; }
         #tab-logs .notif-line .m { -webkit-line-clamp: 2; }
 
-        /* ============ 全局卡片底色半透明：仅白色底 75%，卡片内文字/控件保持 100% 不透明 ============ */
+        /* ============ 全局卡片底色半透明：仅白色底 70%，卡片内文字/控件保持 100% 不透明 ============ */
         .card,
         .hero-search,
         .loading-card,
         .cfg-card {
-            background: rgba(255, 255, 255, 0.75);
+            background: rgba(255, 255, 255, 0.7);
         }
-        /* 配置卡 hover 底色同样降到 75%（与上方 .cfg-card:hover 同权重，置于其后生效） */
         .cfg-card:hover {
-            background: rgba(238, 242, 255, 0.75);
+            background: rgba(238, 242, 255, 0.7);
         }
-        /* 浅底容器内把辅助文字档位提深：卡片实际底色是 75% 白（合成约 rgb(194,194,195)），
-           --text-400(#A1A1AA) 在上面只有 1.44:1 几乎看不见，提到 --text-500(#71717A) 为 2.72:1。
-           只在这些容器上重定义变量，深色区（页面底 / 弹窗挂在 body 下）不受影响。 */
+        /* 浅底容器内把辅助文字档位提深：--text-400 在 75% 白底上仅 1.44:1，提到 --text-500 为 2.72:1；只在这些容器重定义，深色区不受影响 */
         .card,
         .hero-search,
         .loading-card,
@@ -2188,8 +2072,7 @@
                             <button class="scope-opt"      data-scope="logs"     type="button" onclick="scopePick('logs', this)">日志</button>
                         </div>
                     </div>
-                    <!-- 左列容器：拼接卡 + Emby/后台任务。桌面端靠它把两块锁在同一 grid 单元格内，
-                         高度只由自身内容决定，不被右列跨行的整理历史撑出等高空洞 -->
+                    <!-- 左列容器：把两块锁在同一 grid 单元格，高度只由自身内容决定，不被右列跨行的整理历史撑出等高空洞 -->
                     <div class="bg-left-col">
                     <!-- 媒体信息 + 内存占用 合并卡 -->
                     <div class="card sys-combo-card">
@@ -2677,7 +2560,6 @@
         let envData = { sections: {} };
         const BOOLEAN_KEYS = new Set(['ENV_AUTHORIZATION', 'ENV_AUTO_MAKE_JSON', 'ENV_MAKE_NEW_LINK']);
         const SECRET_PATTERNS = /SECRET|TOKEN|PASSWORD|COOKIE/i;
-        // 分享类转存目录 ID（5 个共用同一目录，UI 合并为一个输入框）
         const MERGE_PID_KEYS = [
             'ENV_123_LINK_UPLOAD_PID',
             'ENV_123_KUAKE_UPLOAD_PID',
@@ -2702,7 +2584,6 @@
             document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active', 'slide-l', 'slide-r', 'slide-fl', 'slide-fr'));
             if (panel) {
                 if (isSysBg) {
-                    // 手机端整屏滑动翻页；桌面端原有的轻滑入
                     const mobile = window.matchMedia('(max-width: 768px)').matches;
                     panel.classList.add(tab === 'bg' ? (mobile ? 'slide-fr' : 'slide-r') : (mobile ? 'slide-fl' : 'slide-l'));
                 }
@@ -2710,17 +2591,13 @@
             }
             const nav = document.querySelector(`.nav-item[data-tab="${tab}"]`);
             if (nav) nav.classList.add('active');
-            // 侧边栏"保存配置"按钮始终显示（不随 tab 隐藏）
 
-            // 移动端：进入 5 个设置类 Tab 时切换顶部工具行：汉堡/分段/日志 → 返回/空/保存；同时隐藏搜索框
-            // 进入 logs / 订阅探索 / 海报详情 tab 时：只显示左返回按钮，其余全部隐藏
             const SUB_TABS = { user: 1, 'transfer-save': 1, transfer: 1, strm: 1, mediawarp: 1 };
             const toolbar = document.getElementById('topToolbar');
             if (toolbar) {
                 toolbar.classList.toggle('mode-edit', !!SUB_TABS[tab]);
                 toolbar.classList.toggle('mode-log', tab === 'logs' || tab === 'tmdb' || tab === 'tmdb-detail' || tab === 'bg');
             }
-            // 工具栏居中显示当前位置（订阅探索按子视图细化）
             const TITLES = {
                 bg: '后台', logs: '日志动态', 'tmdb-detail': '详情',
                 user: '用户配置', 'transfer-save': '资源转存',
@@ -2735,14 +2612,11 @@
                 }
             }
 
-            // 关闭移动端抽屉和遮罩（含内容卡片推恢复位）
             setDrawer(false);
-            // 更新 URL hash
             if (location.hash !== '#' + tab) {
                 history.replaceState(null, '', '#' + tab);
             }
-            // 首次进入各 Tab 时加载对应数据
-            // system / bg 之间切换时数据轮询常驻、不强行重载，避免切换时出现"刷新页面"的闪烁感
+            // 首次进入各 Tab 加载对应数据；system/bg 之间切换时轮询常驻、不强行重载，避免切换时闪烁
             if (tab === 'system') {
                 // 进入首页统一强制回顶（双重 rAF：等面板布局/动画后再滚，避免被后续 reflow 冲回底部）
                 requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -2756,10 +2630,7 @@
                 if (!_maoyanRankLoaded['trendRankTrackMaoyanMovie']) loadMaoyanRank('trendRankTrackMaoyanMovie', 'movie');
                 if (!window._channelRankLoaded) { window._channelRankLoaded = true; loadChannelRank('trendRankTrackChannel'); }
             }
-            // 首页与后台页共用的常驻数据：轮询 + 整理历史 + 媒体统计 + Emby 洗版状态。
-            // 必须同时覆盖 system 和 bg —— 这几项原先只挂在 system 分支里，
-            // 直接用 #bg 刷新时 switchTab('bg') 且 prevTab 为空，永远走不到，
-            // 表现为「后台页一刷新，整理历史和媒体信息拼接卡就没数据」。
+            // 首页与后台页共用的常驻数据必须同时覆盖 system 和 bg：只挂 system 时，用 #bg 刷新会永远走不到，后台页刷新后整理历史与拼接卡就没数据
             if (tab === 'system' || tab === 'bg') {
                 startUsagePolling();
                 startHistoryPolling();
@@ -2791,7 +2662,6 @@
                 loadMediaWarpConfig();
             }
             if (tab === 'logs') { loadLogs(); startLogsPolling(); } else stopLogsPolling();
-            // Emby 观看时长 + 后台任务：只在「后台」Tab 进入时加载
             if (tab === 'bg') {
                 if (!window._embyUsageAuto) {
                     window._embyUsageAuto = true;
@@ -2806,8 +2676,7 @@
             }
 
             // ============ 订阅探索 / 海报详情：整页化管理 ============
-            // 离开这两个整页（回系统等）时释放榜单与详情内容，严格内存控制；
-            // 返回订阅探索页且榜单区为空时，按当前视图（榜单/已订阅/追剧日历）重新加载
+            // 离开整页时释放榜单与详情内容；返回且榜单为空时按当前视图重新加载
             if ((prevTab === 'tmdb' || prevTab === 'tmdb-detail') && tab !== 'tmdb' && tab !== 'tmdb-detail') {
                 const listBox = document.getElementById('tmdb-content');
                 if (listBox) listBox.innerHTML = '';
@@ -2825,7 +2694,6 @@
 
         let _detailFromTab = 'system';
 
-        // 顶部工具栏返回键 / 页内返回条统一后退：详情 → 上一页；其它 → 系统
         function goTopBack() {
             const cur = document.querySelector('.tab-panel.active');
             const curTab = cur ? (cur.id || '').replace('tab-', '') : '';
@@ -2870,8 +2738,7 @@
             } catch (e) { /* 存储满/禁用时静默降级，内存缓存仍可用 */ }
         }
 
-        // 搜索单个关键词：movie/tv 都搜，合并结果后按 完全匹配 > 包含匹配 > 兜底 选取。
-        // 避免 movie 优先策略抢跑（如电视剧片名被同名/近似电影顶掉）
+        // 搜索单个关键词：movie/tv 都搜，按 完全匹配 > 包含匹配 > 兜底 选取，避免 movie 优先抢跑
         async function searchFirstPoster(key) {
             const normKey = String(key || '').trim().toLowerCase();
             const all = [];
@@ -2881,7 +2748,6 @@
                     if (d && d.items) all.push(...d.items.filter(i => i.poster_path));
                 } catch (e) { /* 忽略，继续下一个 */ }
             }
-            // 1. 完全匹配（忽略大小写/首尾空格）；同名多个结果时选上映日期最新的（ISO 日期字符串可直接比大小）
             const exact = all.filter(i => (i.title || i.name || '').trim().toLowerCase() === normKey);
             let hit = exact.length ? exact.sort((a, b) => String(b.release_date || '').localeCompare(String(a.release_date || '')))[0] : null;
             // 2. 包含匹配（结果标题包含关键词，或关键词包含结果标题）
@@ -2889,7 +2755,6 @@
                 const t = (i.title || i.name || '').trim().toLowerCase();
                 return t.includes(normKey) || normKey.includes(t);
             });
-            // 3. 兜底：第一个有海报的结果
             if (!hit) hit = all[0];
             return hit || null;
         }
@@ -2921,17 +2786,14 @@
                 hits.forEach((h, j) => { cache[slice[j]] = h || _NO_RESULT; changed = true; });  // null 也缓存为 _NO_RESULT，避免重复搜索
             }
             if (changed) saveSubCache(cache);
-            // 过滤无结果占位符：不能按引用（_NO_RESULT）比较——占位符经 localStorage
-            // JSON 序列化/反序列化后是新对象，引用比较失效，会渲染出无标题无海报的空卡片
+            // 无结果占位符不能按引用比较：经 localStorage 序列化后是新对象，引用比较失效会渲染出无标题无海报的空卡片
             const items = keys.slice(0, 60).map(k => cache[k]).filter(it => it && !it._noResult);
             if (!items.length) { content.innerHTML = emptyHtml; return; }  // 无结果：显示空态，不回退榜单
             content.innerHTML = `<div class="tmdb-grid">${items.map(it => renderTmdbCard(it, 'w185', true)).join('')}</div>`;
-            // 用 setTimeout 延迟到浏览器 paint 之后，再异步补充集数角标
             setTimeout(() => fillEpisodeBadges(), 0);
         }
 
-        // 已订阅海报右上角角标：Emby 已收录集数 / TMDB 总集数（小并发渐进加载，失败的单卡跳过）
-        // 使用 _episodeBadgeCache 缓存结果，避免重复请求
+        // 已订阅海报角标：Emby 已收录集数 / TMDB 总集数，小并发渐进加载，_episodeBadgeCache 缓存避免重复请求
         async function fillEpisodeBadges() {
             const cards = [...document.querySelectorAll('.tmdb-card')].filter(c => c.dataset.id && c.dataset.type);
             const BATCH = 6;
@@ -2994,7 +2856,6 @@
                 content.innerHTML = _contentPlaceholder(_calData.error || '未配置 TMDB API Key');
                 return;
             }
-            // 订阅片单中 tmdb_id -> 海报条目（渲染海报卡片，含点击看详情）
             _calItemMap = {};
             tvItems.forEach(it => {
                 _calItemMap[String(it.id)] = it;
@@ -3029,7 +2890,6 @@
             let html = `<div class="tmdb-dstrip">
                 <div class="tmdb-dstrip-hint">选择日期查看当天更新 · 左右滑动查看更多</div>
                 <div class="tmdb-dstrip-scroll" id="tmdb-dstrip-scroll">`;
-            // 今天/明天用文字替换（仅前 2 天）
             const todayStr = today || '';
             let tomStr = '';
             if (todayStr) {
@@ -3052,7 +2912,6 @@
             });
             html += '</div><div class="tmdb-dstrip-posts" id="tmdb-dstrip-posts"></div></div>';
             container.innerHTML = html;
-            // 滚动到选中日期
             const sc = document.getElementById('tmdb-dstrip-scroll');
             if (sc) requestAnimationFrame(() => {
                 const selEl = sc.querySelector('.tmdb-dstrip-cell.selected');
@@ -3073,7 +2932,6 @@
             renderCalPosts();
         }
 
-        // 选中日期下方：渲染当天更新的剧集海报（沿用已订阅/榜单海报样式，点击可看详情）
         function renderCalPosts() {
             const posts = document.getElementById('tmdb-dstrip-posts');
             if (!posts) return;
@@ -3086,7 +2944,6 @@
                 return;
             }
             posts.innerHTML = `<div class="tmdb-grid">${items.map(it => renderTmdbCard(it, 'w185', true)).join('')}</div>`;
-            // 每张海报叠加当天更新的集数角标（如「第5集」「第1·3集」）
             items.forEach(it => {
                 const eps = dayData[String(it.id)] || [];
                 if (!eps.length) return;
@@ -3102,17 +2959,14 @@
             });
         }
 
-        // 订阅探索页子视图切换手势：全部禁用左右滑切页,
-        // 各视图只能通过标题「全部」> 和控件进入，避免列表内误触切页。
+        // 订阅探索子视图禁用左右滑切页，只能从标题「全部」> 或控件进入，避免列表内误触切页
 
-        // 订阅探索子视图标题：细分 4 类（TMDB热门电影/电视剧、国产热门电影/电视剧）
         function _tmdbTitle(view) {
             if (view === 'maoyan') return _maoyanView === 'tv' ? '国产热门电视剧' : '国产热门电影';
             if (view === 'subscribed') return '已订阅';
             if (view === 'calendar') return '追剧日历';
             if (view === 'channel') return '频道更新';
-            // 搜索走的是混合搜索（电影 + 电视剧），再挂「热门电影/电视剧」的标题就名不副实；
-            // 直接带出关键词，用户一眼知道当前看的是哪次搜索的结果（搜索框回车后已清空）。
+            // 搜索走混合搜索（电影 + 电视剧），标题直接带出关键词而不是「热门电影/电视剧」
             if (_tmdbQuery) return '搜索：' + _tmdbQuery;
             return _tmdbType === 'tv' ? 'TMDB热门电视剧' : 'TMDB热门电影';
         }
@@ -3127,7 +2981,6 @@
             renderTmdbView();
         }
 
-        // 进入订阅探索页且榜单区为空时，按当前视图重新加载（榜单 / 已订阅 / 追剧日历）
         function renderTmdbView() {
             if (_tmdbView === 'subscribed') showSubscribed();
             else if (_tmdbView === 'calendar') showCalendar();
@@ -3136,15 +2989,12 @@
             else loadTmdb();
         }
 
-        // 榜单控件（类型/分类/时间/搜索）触发加载时，退出已订阅 / 追剧日历视图
         function _exitSubscribedView() {
             if (_tmdbView === 'subscribed' || _tmdbView === 'calendar') _tmdbView = 'list';
         }
 
-        // 首页「TMDB 电影/电视剧趋势榜」：加载今日趋势前 10，渲染横滑海报条
         const _trendRankLoaded = {};
-        // 同一 URL 只发一次请求。趋势榜与「订阅探索」入口海报要的是同一份 TV 趋势数据，
-        // 不共用就会在首屏并发打两遍同一个接口（后端缓存未命中时等于两次上游 TMDB 请求）。
+        // 同一 URL 只发一次请求：趋势榜与订阅探索入口海报要的是同一份数据，不共用会在首屏打两遍同一接口
         const _rankReqCache = {};
         function fetchRankOnce(url) {
             if (!_rankReqCache[url]) {
@@ -3152,18 +3002,11 @@
             }
             return _rankReqCache[url];
         }
-        // 首页三个榜单条（TMDB 趋势 / 猫眼热度 / 频道更新）共用同一套骨架：
-        // 取一次数据 → 过滤掉无海报的条目 → 铺成横滑海报条。差异只有数据源 URL
-        // 与条目字段的取名，所以抽成一个 loader，调用方只负责传 URL 和字段映射。
+        // 三个榜单条共用同一套骨架（取数 → 过滤无海报 → 铺横滑条），差异只有 URL 与字段取名，故抽成一个 loader
         const _RANK_PLACEHOLDER = 'color:var(--text-400);padding:14px 4px;font-size:12px;';
 
         // ============ 统一加载指示器 ============
-        // 静态的「加载中...」文字换成旋转环形图标：纯 CSS 动画（样式见 <head> 里的 ._spin），
-        // 无外部依赖、不额外发请求。样式写在静态 <style> 里而不是这里注入，是因为首屏
-        // 「后台任务」的初始 HTML 也要用，运行时注入会来不及。
-        // 之所以做成自动识别，是因为占位文案散落在 12+ 处调用点（榜单条 / 频道更新 / 详情弹窗 /
-        // 任务列表 / 观看数据 …），逐个改容易漏；统一在这里按文案判断，一处生效全局覆盖。
-        // size 默认 14px，在横滑条（12px 字号）与全屏占位（大留白）里都能看；颜色随 currentColor 走。
+        // 样式写在静态 <style> 里（首屏「后台任务」也要用，运行时注入来不及）；按文案自动识别是因为占位文案散落在 12+ 处调用点
         function _spinner(size) {
             const s = size || 14;
             return `<span class="_spin" style="width:${s}px;height:${s}px;border-width:${s >= 20 ? 3 : 2}px;"></span>`;
@@ -3173,9 +3016,7 @@
             const t = String(text == null ? '' : text).trim();
             return /^加载中[.．。…]*$/.test(t) || /^loading[.\u2026]*$/i.test(t);
         }
-        // 加载态：只显示旋转图标（不跟文字）。
-        // 图标本身没有语义，补 aria-label 让读屏软件仍能播报「加载中」。
-        // text 参数保留但仅用于可访问性标签，不再渲染成可见文字。
+        // 加载态只显示旋转图标（不跟文字），text 仅作 aria-label 供读屏播报
         function _loaderHtml(text, size) {
             const label = String(text == null ? '' : text).trim() || '加载中';
             return `<span style="display:inline-flex;align-items:center;" role="status" aria-label="${label}">${_spinner(size)}</span>`;
@@ -3185,9 +3026,6 @@
             const inner = _isLoadingText(text) ? _loaderHtml('加载中') : text;
             return `<div style="${_RANK_PLACEHOLDER}">${inner}</div>`;
         }
-        // 全屏内容区（订阅探索 / 频道更新 / 追剧日历 / 趋势榜容器）的占位：居中、深色弱化文字、上下留白 40px。
-        // 加载中 / 暂无数据 / 加载失败 等都复用同一段样式，原来内联字符串复制了 12+ 处。
-        // 其中「加载中」只渲染旋转图标（不显示文字），其它文案原样输出。
         const _CONTENT_PLACEHOLDER_STYLE = 'color:#fff;padding:40px;text-align:center;';
         function _contentPlaceholder(text) {
             const inner = (text === '' || text === undefined || text === null || _isLoadingText(text))
@@ -3196,8 +3034,7 @@
             return `<div style="${_CONTENT_PLACEHOLDER_STYLE}">${inner}</div>`;
         }
 
-        // loadedMap：按 trackId 记忆「已加载」，避免切换页面时重复打接口
-        // toPayload：把上游条目映射成 openTmdbDetail 需要的字段
+        // loadedMap：按 trackId 记忆已加载；toPayload：把上游条目映射成 openTmdbDetail 需要的字段
         async function _loadRankTrack(trackId, loadedMap, url, toPayload) {
             const track = document.getElementById(trackId);
             if (!track || loadedMap[trackId]) return;
@@ -3229,29 +3066,23 @@
             let item;
             try { item = JSON.parse(decodeURIComponent(el.dataset.payload)); }
             catch (e) { return; }
-            // 频道更新条目的分享链接随条目一起传进详情页，不再靠全局变量传递：
-            // 首页大海报等入口没有 target_url，用全局变量会把上一次频道卡片的链接带过去。
+            // 分享链接随条目传进详情页，不用全局变量：首页大海报等入口没有 target_url，会串成上一次频道卡片的链接
             item.target_url = (el.dataset && el.dataset.targetUrl) ? el.dataset.targetUrl : '';
             openTmdbDetail(item);
         }
-        // 「>」打开完整电影/电视剧趋势榜页面
         function openTrendRankMore() { gotoTmdbTrend('movie'); }
         function openTrendRankMoreTv() { gotoTmdbTrend('tv'); }
         function gotoTmdbTrend(mediaType) {
-            // 关键：先复位视图为榜单列表，避免上次停在 已订阅/追剧日历/猫眼/频道更新
-            // 时 _tmdbView 残留旧值，导致标题/内容串到其它页面。
+            // 关键：先复位视图为榜单列表，避免 _tmdbView 残留旧值导致标题/内容串到其它页面
             _tmdbView = 'list';
             _tmdbType = mediaType;
             _tmdbCategory = 'trending';
             _tmdbQuery = '';
             _tmdbTimeWindow = 'day';
             _refreshToolbarTitle();
-            // 这里不要 loadTmdb()：switchTab('tmdb') 内部就会走 renderTmdbView() → loadTmdb()
-            //（见 switchTab 里「每次进入都按当前视图重载」那段）。两处都调等于点一次「›」
-            // 打两次 /api/tmdb。
+            // 这里不要 loadTmdb()：switchTab('tmdb') 内部已会走 renderTmdbView()，两处都调等于打两次 /api/tmdb
             switchTab('tmdb');
         }
-        // 猫眼电视剧热度榜：数据来自 /api/maoyan?view=tv，item 结构同 TMDB 列表项
         const _maoyanRankLoaded = {};
         async function loadMaoyanRank(trackId, view) {
             const v = view || 'tv';
@@ -3259,10 +3090,6 @@
                 '/api/maoyan?view=' + v,
                 it => ({ id: it.id, type: it.media_type || v, title: it.title, release_date: it.release_date || '', poster_path: it.poster_path, backdrop_path: it.backdrop_path || '' }));
         }
-        // 「>」打开完整猫眼电视剧榜单页
-        // 取数统一交给 switchTab('tmdb') 内的 renderTmdbView()：那里会按 _tmdbView
-        // 分派到 loadMaoyan。这里再调一次就会连打两遍 /api/maoyan。
-        // 所以这里只赋值 + 刷标题。
         function gotoMaoyanTv() {
             _tmdbView = 'maoyan';
             _maoyanView = 'tv';
@@ -3313,15 +3140,12 @@
             if (_chLonged) { _chLonged = false; ev.stopPropagation(); return; }
             openTrendRankItem(el);
         }
-        // 「>」进入订阅探索页「频道更新」视图（完整海报网格）
-        // 同 gotoMaoyanTv：setTmdbView 会先取一次数，switchTab 里还会再取一次，只保留后者
         function gotoChannelUpdates() {
             _tmdbView = 'channel';
             _refreshToolbarTitle();
             switchTab('tmdb');
         }
-        // 频道更新视图：近 24 小时频道监控识别出的影视，海报网格展示（复用榜单卡片，点击进详情）
-        // 超过 24 小时的旧消息不再铺出来 —— 频道内容是更新/连载性质，过期项只会让海报墙越积越长
+        // 频道更新视图：近 24 小时识别出的影视；超过 24 小时的旧消息不再铺出，过期项只会让海报墙越积越长
         let _channelLoaded = false, _channelHtml = '';
         async function showChannelUpdates(force) {
             const content = document.getElementById('tmdb-content');
@@ -3371,9 +3195,6 @@
         function channelTouchEnd(ev, cd) { clearTimeout(_chPressTimer); _chPressTimer = null; }
         function channelLongMenu(cd, x, y) {
             _chLonged = true;
-            // 桌面右键不会产生 click 事件，_chLonged 会一直挂着把下一次左键吞掉
-            //（表现为「右键一次之后，第一次左键点卡片没反应」）。延时复位，
-            // 既拦得住长按后紧跟的合成点击，又不影响之后的正常点击。
             clearTimeout(_chLongResetTimer);
             _chLongResetTimer = setTimeout(() => { _chLonged = false; }, 400);
             const tgt = cd && cd.getAttribute ? cd.getAttribute('data-target-url') : '';
@@ -3385,9 +3206,7 @@
             m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 8) + 'px';
             m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 8) + 'px';
         }
-        // 入库请求进行中标记。后端这条路径没有去重（自动监控那条靠 IsProcessed 拦重复），
-        // 连点会真的转存两份，所以必须自己拦住，并且立刻给个反馈 ——
-        // 转存要先递归列完整棵分享目录，等待期间没有任何提示会让人以为没点上。
+        // 入库进行中标记：后端这条路径没有去重，连点会真的转存两份，必须自己拦住并立刻给反馈
         let _chTransferBusy = false;
         function _channelDoTransfer(url) {
             if (!url || _chTransferBusy) return;
@@ -3409,8 +3228,7 @@
             _channelDoTransfer(url);
         }
         function hideChannelMenu() { const m = document.getElementById('channelLongMenu'); if (m) m.style.display = 'none'; }
-        // 菜单弹出后点页面别处 / 滚动页面都要关掉：原先只有「点了菜单项」才关，
-        // 右键弹出后点其它地方，菜单会一直挂在屏幕上。
+        // 菜单弹出后点页面别处 / 滚动都要关掉，否则会一直挂在屏幕上
         document.addEventListener('click', function (e) {
             const m = document.getElementById('channelLongMenu');
             if (m && m.style.display === 'block' && !m.contains(e.target)) hideChannelMenu();
@@ -3443,14 +3261,12 @@
             const action = subscribed ? 'unsubscribe' : 'subscribe';
             try {
                 const r = await api('/api/tmdb/subscribe', 'POST', { title: title, action: action });
-                // 同步更新前端已加载的 ENV_FILTER，方便直接去「资源转存」查看
                 if (r.filter_value !== undefined && envData.sections && envData.sections['资源转存']) {
                     const filterItem = envData.sections['资源转存'].find(i => i.key === 'ENV_FILTER');
                     if (filterItem) filterItem.value = r.filter_value;
                     const filterInput = document.querySelector('#tab-transfer-save input[data-key="ENV_FILTER"]');
                     if (filterInput) filterInput.value = r.filter_value;
                 }
-                // 更新当前卡片按钮状态
                 document.querySelectorAll('.tmdb-card').forEach(card => {
                     if ((card.dataset.title || '').toLowerCase() === title.toLowerCase()) {
                         const btn = card.querySelector('.tmdb-subscribe-btn');
@@ -3471,7 +3287,6 @@
                     const cache = getSubCache();
                     if (cache[title] !== undefined) { delete cache[title]; saveSubCache(cache); }
                 }
-                // 已订阅视图下取消订阅：本地移除卡片，清空后回退榜单
                 if (_tmdbView === 'subscribed' && subscribed) {
                     const cards = document.querySelectorAll('#tmdb-content .tmdb-card');
                     cards.forEach(card => {
@@ -3480,7 +3295,6 @@
                     const grid = document.querySelector('#tmdb-content .tmdb-grid');
                     if (grid && grid.children.length === 0) setTmdbView('list');
                 }
-                // 详情页标题旁订阅按钮：刷新按钮态
                 if (btn) {
                     const nowSub = !subscribed;
                     btn.classList.toggle('subscribed', nowSub);
@@ -3493,12 +3307,9 @@
             }
         }
 
-        // 详情页标题旁订阅按钮：复用 subscribeTmdb（btn 传入以刷新按钮态）
 
         // ============ 统一弹层（全屏遮罩 + 居中卡片，媒体查重 / Emby 观看详情使用） ============
-        // 原先各功能各自 createElement + 绑定遮罩关闭，且都以 '.tmdb-modal-overlay' 取第一个匹配，
-        // 同时存在多个弹层时会误关他人。这里统一为「每弹层唯一 id + 统一开关 + 统一关闭按钮」。
-        // （TMDB 榜单与海报详情已改为整页 Tab，不再使用弹层。）
+        // 统一为「每弹层唯一 id + 统一开关 + 统一关闭按钮」：此前各功能都以 '.tmdb-modal-overlay' 取第一个匹配，多弹层会误关他人
         function openOverlay(id, innerHtml, extraClass) {
             closeOverlay(id);
             const overlay = document.createElement('div');
@@ -3532,11 +3343,8 @@
         async function openTmdbDetail(item) {
             const box = document.getElementById('tmdb-detail-content');
             if (!box) return;
-            // 「立即入库」只对带频道分享链接的条目显示。这里按本次传入的条目统一重置，
-            // 不依赖各调用方各自维护：首页大海报等入口没有 target_url，一旦不清就会把上一次
-            // 频道卡片的链接带过来 —— 详情页错误显示「立即入库」，点下去转存的是旧链接。
+            // 「立即入库」只对带 target_url 的条目显示，按本次传入条目统一重置：不清会串成上一次频道卡片的链接
             _channelTargetURL = (item && item.target_url) ? item.target_url : '';
-            // 记录从哪个页面进入详情，供返回键回退到上一页
             const from = document.querySelector('.tab-panel.active');
             _detailFromTab = (from && from.id && from.id !== 'tab-tmdb-detail') ? from.id.replace('tab-', '') : 'system';
             box.innerHTML = '<div style="text-align:center;padding:48px 20px;color:var(--text-500);">加载详情...</div>';
@@ -3601,22 +3409,12 @@
         }
 
         // ============ 详情页「资源」区块（123panfx 资源站） ============
-        //
-        // 交互契约（用户需求）：
-        //   - 不点「搜索」→ 一个字都不打资源站（初始只有标题行 + 搜索按钮，没有任何预取）；
-        //   - 不点「解锁」→ 后端不发任何写操作（解锁才发请求，且只在用户点击时发）。
-        //
-        // 因此这里刻意不做「进入详情页自动搜索」的优化：自动搜会违反第一条契约。
-        //
-        // 关于站点机制：123panfx 是「回复后再查看」，不是积分制。点解锁后后端会以配置
-        // 账号的身份在该帖下发一条预设快捷回复，隐藏的网盘链接随即可见；同一帖 24h 内
-        // 不重复回帖。按钮 title 必须如实写明这一点——回帖是公开可见的写操作。
+        // 交互契约：不点「搜索」→ 不打资源站（无预取）；不点「解锁」→ 后端不发写操作。因此刻意不做自动搜索。
+        // 站点机制：123panfx 是「回复后再查看」，点解锁后后端会以配置账号在该帖发一条预设回复，隐藏链接随即可见，同一帖 24h 内不重复。
+        // 按钮 title 必须如实写明这点 —— 回帖是公开可见的写操作。
 
-        // 最近一次搜索的条目，按 tid 索引 —— 解锁按钮要靠它回填链接区
         let _resItems = {};
 
-        // 搜索按钮：放在「订阅」/「立即入库」同一行，样式与它们完全一致（描边式按钮），图标放大镜。
-        // 没有标题时不渲染（与 renderResBlock 的空返回保持一致）。
         function resSearchBtnHtml(title, year) {
             const kw = (title || '').trim();
             if (!kw) return '';
@@ -3628,7 +3426,6 @@
             _resItems = {};
             const kw = (title || '').trim();
             if (!kw) return '';
-            // 整块先藏起来：没点搜索前详情卡下方不该有任何横线或空隙
             return `<div class="tmdb-res-block" id="tmdb-res-block" hidden>
                 <div class="tmdb-res-head" id="tmdb-res-head" hidden></div>
                 <div class="tmdb-res-list" id="tmdb-res-list"></div>
@@ -3643,7 +3440,6 @@
             // 首次搜索才把整块放出来（之前是 hidden，详情卡下方干净无线条）
             const block = document.getElementById('tmdb-res-block');
             if (block) block.hidden = false;
-            // 搜索中锁按钮，防连点（站点对高频请求不友好）
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner"></i> 搜索中';
             list.innerHTML = '<div class="tmdb-res-note">正在搜索资源站…</div>';
@@ -3668,7 +3464,6 @@
 
         function renderResList(list, data) {
             const items = data.items || [];
-            // 区块头只在有结果时显示；空结果时只留 note 引导用户去资源站
             const head = document.getElementById('tmdb-res-head');
             if (head) {
                 if (!items.length) {
@@ -3688,21 +3483,17 @@
             list.innerHTML = items.map(it => renderResItem(it)).join('');
         }
 
-        // 清晰度/版本类标签用品牌色突出：找资源时第一眼看的就是这个
         const RES_QUALITY_RE = /^(4K|2160p|1080p|720p|8K|UHD|HDR|SDR|10bit|杜比|视界|原盘|REMUX|蓝光|BD)$/i;
         function isQualityTag(t) { return RES_QUALITY_RE.test(String(t || '').trim()); }
 
-        // 日期只留月日：列表里年份都一样，省出来的宽度留给标签
         function shortDate(d) {
             const s = String(d || '').trim();
             return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.slice(5) : s;
         }
 
         function renderResItem(it) {
-            // 标签最多 3 个：meta 行是单行不换行的，多了会把体积/日期挤没
             const tags = (it.tags || []).slice(0, 3)
                 .map(t => `<span class="tmdb-res-tag${isQualityTag(t) ? ' hi' : ''}">${escapeHtml(t)}</span>`).join('');
-            // 体积 / 日期 / 评论 之间插小分隔点，最后一段后面不插
             const parts = [];
             if (it.size) parts.push(`<span class="tmdb-res-size">${escapeHtml(it.size)}</span>`);
             if (it.date) parts.push(`<span>${escapeHtml(shortDate(it.date))}</span>`);
@@ -3720,9 +3511,7 @@
             </div>`;
         }
 
-        // 解锁：用户点了才请求
-        // 后端在该帖下发一条预设回复（站点「回复可见」机制），随后抽取隐藏的网盘链接。
-        // 首次点会比较慢（发帖 + 重新取页），二次点同一帖直接读到已解锁内容。
+        // 解锁才发请求：后端在该帖发一条预设回复后抽取隐藏链接；首次较慢，二次点同一帖直接读已解锁内容
         async function unlockRes(btn) {
             const row = btn.closest('.tmdb-res-item');
             if (!row) return;
@@ -3741,10 +3530,7 @@
                 const r = data.result || {};
                 if (r.links && r.links.length) {
                     box.hidden = false;
-                    // 如实告知这次到底发生了什么：是刚替他回了一帖，还是内容本来就已解锁
                     const how = r.replied ? '已在该帖回复，链接已解锁' : '链接已获取';
-                    // 只对 123 网盘链接自动转存入库；夸克/115/等其他网盘链接仍保留手动复制。
-                    // 判断与后端 rePan123 域名白名单保持一致，兜底用 URL 匹配。
                     const isPan123 = l => String(l.pan).trim().toLowerCase() === '123'
                         || /(?:123pan|123865|123684|123912)\.[a-z]+\/(?:s|123pan)\//i.test(String(l.url || ''));
                     const pan123 = r.links.filter(isPan123);
@@ -3763,7 +3549,6 @@
                     // 保持 disabled：链接已经拿到，不需要也不应该再点一次
                     return;
                 }
-                // 没抽到链接：给原帖入口，让用户去站点自己看
                 const tip = r.message || '该资源需要在资源站查看';
                 showResMsg(box, tip + (r.url ? `　<a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">打开原帖</a>` : ''), 'warn');
                 btn.innerHTML = '<i class="fas fa-lock"></i> 解锁';
@@ -3791,9 +3576,6 @@
             box.innerHTML = `<div class="tmdb-res-note ${kind || ''}">${html}</div>`;
         }
 
-        // 解锁后自动转存：复用「立即入库」同一通道 /api/monitor/transfer。
-        // 只处理 123 网盘链接（调用处已按 isPan123 过滤），仅在这条用户主动触发的
-        // 解锁流程里调用，不区分网盘、不批量连发，失败静默（TG 通知兜底）。
         function autoTransferPanfx(url) {
             if (!url) return;
             fetch('/api/monitor/transfer', {
@@ -3863,7 +3645,6 @@
             </div>`;
         }
 
-        // 订阅探索入口：单张横向海报，最多十张，30 分钟自动轮换
         let _entryPosterItems = [];
         let _entryPosterAll = [];
         let _entryPosterIdx = 0;
@@ -3874,10 +3655,8 @@
         function _entryImgSrc(i) {
             return `https://image.tmdb.org/t/p/w1280${i.backdrop_path || i.poster_path}`;
         }
-        // 大图预解码：先让浏览器把图拉完并解码，再挂到 DOM / --hero-bg 上。
-        // 不预热的话，换图那一刻新图还没解码完 —— 卡面旧海报已淡出、新海报还没画出来，
-        // 页面级的模糊英雄底同步淡出，中间那 200~400ms 露出的就是白色底，肉眼看就是「闪白一下」。
-        // decode() 返回 Promise 且不占主线程；失败/超时都照常回调，绝不把图卡死。
+        // 大图预解码：先让浏览器拉完并解码再挂到 DOM，否则换图那 200~400ms 露出白底就是「闪白一下」
+        // decode() 返回 Promise 且不占主线程，失败/超时照常回调
         const _heroPre = new Set();
         function _preheat(url, done) {
             if (!url) { done && done(); return; }
@@ -3900,26 +3679,20 @@
             _entryPosterItems = _entryPosterAll.slice();
             if (_entryPosterItems.length === 0) { _pruneEntryCardPool([]); return; }
             _buildEntryCarousel();
-            // 裁剪放在建卡之后：先按新的存活集合把不用的卡（连同它那张大图）释放掉，
-            // 顺序反了会在建卡前就把本轮还要用的卡先删了。
+            // 裁剪放在建卡之后：顺序反了会在建卡前就把本轮还要用的卡删掉
             _pruneEntryCardPool();
         }
-        // 卡片元素按条目缓存复用 —— 这是输入时闪屏的主因。
-        // 原先 _buildEntryCarousel 每次都用新建的 <img> 铺一遍，新元素必须重新解码
-        // original 尺寸的大图（单张 2~8MB），解码完成前那块区域是空白；再叠加 .entry-card
-        // 的 opacity .45s 淡入，每敲一个字符就是「海报整块闪一下」。
-        // 复用同一个元素（replaceChildren 只是移动节点）不会重新解码，也不会重播淡入。
+        // 卡片元素按条目缓存复用：不复用则每次新建 <img> 都要重新解码 2~8MB 大图并重播 .45s 淡入，每敲一个字符闪一下
+        // 复用同一元素（replaceChildren 只移动节点）不会重新解码，也不会重播淡入
         let _entryCardPool = new Map();
         let _entryCardVertical = null;   // 建卡时用的断点模式；跨过 768px 断点则整池作废重建
         function _entryCardKey(it) { return (it.media_type || 'movie') + ':' + it.id; }
-        // 池子只保留当前还在用的条目：每张卡都挂着一个已解码的大图，
-        // 不设界会随榜单刷新越积越多 —— 正是这一轮一直在收的内存形态。
+        // 池子只保留当前在用的条目：每张卡挂着一个已解码大图，不设界会随榜单刷新越积越多
         function _pruneEntryCardPool(aliveItems) {
             const alive = new Set((aliveItems || _entryPosterItems.concat(_entryPosterAll)).map(_entryCardKey));
             for (const k of [..._entryCardPool.keys()]) {
                 if (!alive.has(k)) {
-                    // 驱逐前把 img.src 清空：DOM 节点被 drop 后，一旦 img 还挂着 src，
-                    // 那张 original 大图（2~8MB）的解码位图就还压在内存里不释放。
+                    // 驱逐前清空 img.src：否则那张 2~8MB 大图的解码位图还压在内存里不释放
                     const c = _entryCardPool.get(k);
                     const im = c && c.querySelector('img:not(.entry-brand)');
                     if (im) { im.onload = null; im.src = ''; }
@@ -3927,14 +3700,11 @@
                 }
             }
         }
-        // 同一张卡复用到另一条数据（榜单刷新后 id 顺序变了，池子里恰好又命中同一个 key）：
-        // 先预解码新图，解码完再写 src；解码期间旧图仍在位，观众看不到空白。
+        // 同一张卡复用到另一条数据时先预解码新图再写 src，解码期间旧图仍在位，观众看不到空白
         function _syncEntryCardImage(c, it) {
             const img = c.querySelector('img:not(.entry-brand)');
             if (!img) return;
-            // 桌面端图源可以直接算出来；手机端首帧不带图（等无字版），这里就不动 src。
-            // 注意不能把「算不出图源」和「已经是对的图」混成同一个分支 —— 手机端一旦在这里
-            // 把 heroUrl 记成空串，稍后无字版就位时写同一个 url 会被去重挡掉，图永远不出来。
+            // 手机端首帧不带图，这里不动 src；注意别把「算不出图源」和「已经是对的图」混成同一分支，否则无字版会被去重挡掉
             if (window.innerWidth <= 768) {
                 const heroUrl = (it && it._heroPosterUrl) || '';
                 if (heroUrl && img.dataset.heroUrl !== heroUrl) {
@@ -3960,9 +3730,7 @@
             c.className = 'entry-card';
             c._item = it;
             const img = document.createElement('img');
-            // 不再用 loading=lazy：非 active 的卡 opacity 为 0，但元素仍在渲染树里，
-            // lazy 会把它们的解码一路推迟；等到滑动切过去才开始解码，正好撞上淡入 —— 这就是闪白的来源。
-            // 十张图现在全部在渲染时预解码，切换时是「已解码位图直接显形」。
+            // 不用 loading=lazy：非 active 的卡仍在渲染树里，lazy 会把解码推迟到滑动时才开始，撞上淡入就是闪白；十张全部预解码
             img.alt = '';
             // 手机端首帧不预置带字海报，等待详情就绪后一次到位出无字版，避免「有字→无字」切换闪烁
             img.src = vertical
@@ -3987,9 +3755,7 @@
             _entryCardPool.set(key, c);
             return c;
         }
-        // 轮播代际：每次 _buildEntryCarousel 自增。跟手拖动用它做有效性校验 ——
-        // 拖动途中若轮播被重建（搜索框输入每字符重建一次），本次拖动立即作废，
-        // 否则会按旧索引把 opacity 写到已经换过位的卡片上。
+        // 轮播代际：每次重建自增，跟手拖动用它校验有效性 —— 重建后本次拖动作废，否则会按旧索引写 opacity 到已换位的卡上
         let _entryCarouselGen = 0;
 
         function _buildEntryCarousel() {
@@ -3998,14 +3764,11 @@
             let car = strip.querySelector('.entry-carousel');
             if (!car) { car = document.createElement('div'); car.className = 'entry-carousel'; strip.appendChild(car); }
             _entryCarouselGen++;   // 作废进行中的跟手拖动
-            // 重建前清掉拖动残留：卡片节点来自池子会被复用，若上一次跟手拖到一半就
-            // 触发了重建（搜索框输入会每字符重建一次），残留的内联 opacity 会带到新一轮里，
-            // 表现为「刚进页面就有几张卡半透明」。dragging 类一并清掉，恢复 CSS 过渡。
+            // 重建前清掉拖动残留：残留的内联 opacity 会带到新一轮，表现为刚进页面就有几张卡半透明；dragging 类一并清掉
             car.classList.remove('dragging');
             car.replaceChildren(..._entryPosterItems.map(_entryCard));
             [...car.querySelectorAll('.entry-card')].forEach(c => { c.style.opacity = ''; });
-            // 非 active 的卡（10 张里的 9 张）先给浏览器一点时间把位图解码出来，
-            // 滑动切过去时才是即时的。idle 里做，不跟首屏渲染抢主线程。
+            // 非 active 的卡在 idle 时预解码，滑动切过去才是即时的，不跟首屏渲染抢主线程
             const idle = window.requestIdleCallback || (cb => setTimeout(cb, 200));
             idle(() => _entryPosterItems.forEach((_, i) => {
                 const c = car.querySelectorAll('.entry-card')[i];
@@ -4017,8 +3780,7 @@
             _bindEntrySwipe(strip);
             _restartEntryPoster();
         }
-        // 徽标/无文字海报路径按条目缓存：轮播每次重建（搜索框过滤、切作用域）都要重铺一次 <img>，
-        // 不缓存就每敲一个字符重拉 10 次详情接口。缓存 Promise 而非结果，连打时也不会重复请求。
+        // 徽标/无字海报路径按条目缓存 Promise，不缓存就每敲一个字符重拉 10 次详情接口
         function _loadEntryDetail(item, brand, posterImg, metaEl, overviewEl) {
             if (!item || !item.id || !brand) return;
             if (!item._logoReq) {
@@ -4040,7 +3802,6 @@
                     brand.src = `https://image.tmdb.org/t/p/w500${r.logo}`;
                     brand.hidden = false;
                 }
-                // 手机端：首帧 src 为空，详情就绪后一次到位使用无字版（无字版缺失则回退普通海报）——不做二次切换
                 if (posterImg && posterImg.isConnected && window.innerWidth <= 768) {
                     const url = r.textless
                         ? `https://image.tmdb.org/t/p/original${r.textless}`
@@ -4050,9 +3811,7 @@
                     _preheat(url, () => {
                         if (!posterImg.isConnected) return;
                         posterImg.src = url;
-                        // 首帧本来就空着，这里只是补上第一张图，没必要再走一次过渡
                         if (wasEmpty) return;
-                        // 已经有图在显示（比如桌面切到手机断点后补图）：走统一的受控换底路径
                         if (_entryPosterItems[_entryPosterIdx] === item) _updateHeroBg(url);
                     });
                 }
@@ -4066,9 +3825,7 @@
                 }
             });
         }
-        // 只为「当前可见 + 下一张」拉详情：轮播只有 active 那张可见（轮换定时器是 12 小时，实际不自动翻页），
-        // 一次给 10 张都拉等于首屏白发 9 个请求（后端每个详情还要多打一次 TMDB 图片接口）。
-        // item._logoReq 已按条目缓存 Promise，同一张重复触发不会重复请求。
+        // 只为「当前可见 + 下一张」拉详情：给 10 张都拉等于首屏白发 9 个请求；item._logoReq 按条目缓存 Promise
         function _ensureEntryDetail(idx) {
             if (idx < 0 || idx >= _entryPosterItems.length) return;
             const car = document.querySelector('#tmdb-poster .entry-carousel');
@@ -4093,15 +3850,12 @@
         let _heroBgSeq = 0;
         function _updateHeroBg(src) {
             const nextBg = `url("${src}")`;
-            // 图没换就别再走一遍「淡出 → 淡入」：搜索框每次重建轮播都会调到这里，
-            // 无条件过渡等于每敲一个字符让整页模糊背景闪一下。
+            // 图没换就不要再走一遍淡出 → 淡入，否则每敲一个字符整页模糊背景闪一下
             if (nextBg === _heroBgCurrent) return;
             _heroBgCurrent = nextBg;
             const seq = ++_heroBgSeq;
-            // 关键：**先确认新图能画出来，再撤掉旧底**。
-            // 原先是「立刻把底淡成透明 → 等 180ms 无脑换成新 url」。那 180ms 里新图还在下载/解码，
-            // background-image 指向一张没有像素的图 = 页面露出白色底，这就是切海报时的白色闪屏。
-            // 现在按 预解码 → 换图 → 再淡入 的顺序走，中间任何一步都不会出现无像素的空窗。
+            // 关键：先确认新图能画出来再撤旧底（预解码 → 换图 → 再淡入）
+            // 反过来「先把底淡成透明、等 180ms 再换 url」会让 background-image 指向无像素的图，露出白底 = 白色闪屏
             _preheat(src, () => {
                 if (seq !== _heroBgSeq) return;      // 期间又切了下一张，本次作废
                 _paintHeroBg(nextBg);
@@ -4109,7 +3863,6 @@
         }
         function _paintHeroBg(bg) {
             document.documentElement.style.setProperty('--hero-bg', bg);
-            // 换完背景再淡出重入一次，拿到「交叉过渡」的观感；此时新图已解码，淡入过程不会露白
             document.body.classList.add('hero-bg-changing');
             if (_heroBgTimer) clearTimeout(_heroBgTimer);
             _heroBgTimer = setTimeout(() => {
@@ -4122,7 +3875,6 @@
             _updateEntryCarousel();
             _restartEntryPoster();
         }
-        // 系统页大海报点击：打开当前轮播条目的详情
         function openHeroEntryDetail() {
             const item = _entryPosterItems[_entryPosterIdx];
             if (!item || !item.id) return;
@@ -4139,7 +3891,6 @@
             if (!_entryPosterItems.length || _entryPosterItems.length === 1) return;
             _setEntryPoster(_entryPosterIdx + dir);
         }
-        // 当前张的左右邻居（含循环环绕）提前预热，滑动方向无论左右都已有现成位图
         function _preheatNeighborEntry() {
             const n = _entryPosterItems.length;
             if (n < 2) return;
@@ -4148,20 +3899,15 @@
                 if (it) _preheat((window.innerWidth <= 768 && it._heroPosterUrl) || _entryImgSrc(it));
             });
         }
-        // 跟手拖动阈值：手指横移达到这个距离时，两张卡的透明度正好交换完毕（p 到 1）。
-        // 取值参考：屏幕宽度约 375~430px，这个值约等于屏宽的 1/3，划起来不费力又不易误触。
         const ENTRY_SWIPE_DIST = 140;
 
-        // 取轮播容器里的卡片数组（与 _updateEntryCarousel 用同一选择器，保证索引一致）
         function _entryCards() {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
             return car ? [...car.querySelectorAll('.entry-card')] : [];
         }
 
-        // 拖动中：把手指进度 p 直接写进两张卡的内联 opacity，实现跟手淡化。
-        // 当前卡 1→0、目标卡 0→1，全程互补，任意时刻两者之和恒为 1（不会出现双淡的空窗）。
-        // p 同时夹在 [0,1]：拖动超过阈值后不再继续变化，给用户「已经划到位」的手感反馈。
-        // 文字/徽标是卡片的子元素，随卡片整体淡化，无需单独控制。
+        // 拖动中把手指进度 p 写进两张卡的内联 opacity：当前 1→0、目标 0→1 全程互补（无双淡空窗），p 夹在 [0,1] 给出「已划到位」的手感
+        // 文字/徽标是子元素，随卡片整体淡化，无需单独控制
         function _dragEntryPoster(from, dir, dx) {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
             if (!car) return;
@@ -4181,46 +3927,37 @@
             if (item) _updateHeroBg((window.innerWidth <= 768 && item._heroPosterUrl) || _entryImgSrc(item));
         }
 
-        // 松手收尾：清掉拖动期间写的内联 opacity，把控制权交回 .active 类与 CSS 过渡。
-        // 必须在切换索引/类名之前调用 —— 内联 opacity 优先级高于 .active 类，
-        // 残留的话会把「切过去」的目标卡压成半透明。
-        // dragging 先移除（恢复 transition），这样随后类名变化会有 .22s 收尾动画而不是硬切。
+        // 松手收尾必须在切换索引/类名之前调用：内联 opacity 优先级高于 .active 类，残留会把目标卡压成半透明
+        // dragging 先移除以恢复 transition，让随后的类名变化有 .22s 收尾动画而不是硬切
         function _endEntryDrag(applied) {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
             if (!car) return;
             car.classList.remove('dragging');
             _entryCards().forEach(c => { c.style.opacity = ''; });
             if (applied) return;   // 调用方随后会走 _setEntryPoster 切好索引与类名
-            // 未过阈值：索引不变，但内联 opacity 刚被清掉、.active 又没重算，
-            // 需显式刷新一次让当前卡回到 opacity:1（弹回原位）。
+            // 未过阈值时索引不变，但内联 opacity 已清、.active 未重算，需显式刷新让当前卡回到 opacity:1
             _updateEntryCarousel();
         }
 
         function _bindEntrySwipe(strip) {
             if (!strip || strip.dataset.swipedBound) return;
             strip.dataset.swipedBound = '1';
-            // _drag 记录本次触摸的手势状态；null 表示未在有效横向拖动中。
-            // gen 记下开始拖动时的轮播代际：拖动途中若轮播被重建（搜索框输入每字符重建一次），
-            // 卡片集合与索引都换了，本次拖动必须作废 —— 否则会按旧索引写 opacity 到错误的卡上。
+            // _drag 记录本次触摸的手势状态；gen 记下开始时的轮播代际，重建后代际不符则本次拖动作废
             let _drag = null;
             strip.addEventListener('touchstart', e => {
                 if (!e.touches || !e.touches[0]) return;
                 _entryPosterTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
                 _drag = null;
-                // 手指刚落下就把左右相邻两张的图预热掉：等 touchend 判定完方向再下载，
-                // 那 0.22s 的淡入基本全花在下载+解码上，看起来就是闪。
+                // 手指刚落下就预热左右相邻两张，否则那 0.22s 的淡入基本全花在下载+解码上，看起来就是闪
                 _preheatNeighborEntry();
             }, { passive: true });
-            // touchmove 不用 passive：横向锁定后要 preventDefault 阻止页面跟着滚。
-            // 「页面锁住、只切海报」的选择要求这里能拦默认行为，passive 下 preventDefault 无效。
             strip.addEventListener('touchmove', e => {
                 const t = _entryPosterTouch;
                 if (!t || !e.touches || !e.touches[0]) return;
                 const c = e.touches[0];
                 const dx = c.clientX - t.x, dy = c.clientY - t.y;
                 if (!_drag) {
-                    // 方向锁定：纵向分量更大就认定是竖划页面，本次触摸放弃切海报。
-                    // 一旦锁定为横向就持续跟手，即使后面手指划歪了也不中途改判（否则会抖）。
+                    // 方向锁定：纵向分量更大就认定是竖划页面；一旦锁定横向就持续跟手，中途不改判（否则会抖）
                     if (Math.abs(dx) < 12) return;                        // 位移太小，方向还不明确
                     if (Math.abs(dx) <= Math.abs(dy)) return;             // 竖向为主 → 让页面滚
                     _drag = { dir: dx < 0 ? 1 : -1, locked: true, gen: _entryCarouselGen, from: _entryPosterIdx };
@@ -4233,16 +3970,13 @@
                 const t = _entryPosterTouch; _entryPosterTouch = null;
                 const d = _drag; _drag = null;
                 if (!t || !d || !d.locked) return;
-                // 轮播在拖动途中被重建 → 索引与卡片集合都已换新，本次拖动作废，
-                // 但 dragging 类/内联样式可能已写上，仍需清一次（按当前节点清，是安全的）。
+                // 拖动途中轮播被重建则本次作废，但仍需按当前节点清一次 dragging 类与内联样式
                 if (d.gen !== _entryCarouselGen) { _endEntryDrag(true); return; }
                 const c = (e.changedTouches && e.changedTouches[0]) || null;
                 const dx = c ? c.clientX - t.x : 0;
                 // 过阈值（阈值的一半）才真正切过去；否则弹回原图不改索引
                 const applied = Math.abs(dx) >= ENTRY_SWIPE_DIST / 2;
-                // 顺序有讲究：必须先清掉拖动期间写的内联 opacity、恢复 transition，
-                // 再切索引。内联样式的优先级高于 .active 类 —— 若先切类名，
-                // 目标卡会被残留的「opacity: p」压着，看起来就是「划过去了但没变亮」。
+                // 必须先清内联 opacity、恢复 transition 再切索引：先切类名会让目标卡被残留的 opacity 压着不亮
                 _endEntryDrag(applied);
                 if (applied) {
                     _setEntryPoster(d.from + d.dir);
@@ -4254,7 +3988,6 @@
         }
 
         async function loadTmdb(force, silent) {
-            // 静默模式：只预取榜单数据填充入口海报，不触碰榜单内容区
             if (silent) {
                 try {
                     const data = await fetchRankOnce('/api/tmdb?category=trending&type=tv&time_window=day');
@@ -4269,8 +4002,7 @@
             try {
                 let query;
                 if (_tmdbQuery) {
-                    // 混合搜索：type=all 让后端走 /search/multi，一次把电影和电视剧都搜出来。
-                    // 原先固定带 _tmdbType（默认 movie），搜剧名会一条都搜不到。
+                    // 混合搜索带 type=all 走 /search/multi，一次把电影和电视剧都搜出来（不带则按 movie 搜，剧名一条都搜不到）
                     query = `q=${encodeURIComponent(_tmdbQuery)}&type=all` +
                         (force ? '&refresh=1' : '');
                 } else {
@@ -4285,8 +4017,7 @@
             }
         }
 
-        // 榜单结果渲染（TMDB 榜单与猫眼榜单共用）：未配置 / 加载失败 / 暂无数据 / 网格
-        // viewName 是发起请求时的视图，返回时用户若已切走就不再覆盖内容
+        // 榜单结果渲染（TMDB 与猫眼共用）：viewName 是发起请求时的视图，返回时用户已切走就不再覆盖内容
         function _renderTmdbResult(content, data, viewName) {
             if (_tmdbView !== viewName) return;
             if (!data.configured) {
@@ -4314,7 +4045,6 @@
             </div>`;
         }
 
-        // 猫眼榜单：卡片、评分、订阅机制与 TMDB 榜单完全一致，只是数据源不同
         async function loadMaoyan() {
             const content = document.getElementById('tmdb-content');
             if (!content) return;
@@ -4332,8 +4062,7 @@
         const _memHistory = [];   // 仅保留 ~150 秒即可覆盖渲染窗口(90s)+余量，避免留存 10 分钟历史造成冗余占用
         let _memYMin = null, _memYMax = null;   // Y 轴平滑后的显示范围（跨帧，供收窄缓动用）
 
-        // _usagePollWanted 记录「当前页面是否需要这个轮询」，与定时器是否真的在跑分开：
-        // 页面隐藏时定时器要停，但用户切回来还得接着跑。
+        // _usagePollWanted 记录页面是否需要轮询，与定时器是否真在跑分开：页面隐藏时停，用户切回来要续
         let _usagePollWanted = false;
         function _usageTimerStart() {
             if (_usageTimer || document.hidden) return;
@@ -4354,15 +4083,13 @@
             _usagePollWanted = false;
             _usageTimerStop();
         }
-        // 页面切到后台就停掉 1 秒轮询：用户看不到时没必要持续请求接口、重绘 SVG 趋势图；
-        // 切回前台且原本需要轮询时再续上（此时先补一次请求，避免图上出现空档）。
+        // 页面切到后台就停 1 秒轮询；切回前台且原本需要轮询时续上，并先补一次请求避免图上出现空档
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) _usageTimerStop();
             else if (_usagePollWanted) _usageTimerStart();
         });
 
-        // 保形平滑（monotone cubic Hermite）：切线按相邻割线限制，曲线经过所有数据点并抑制过冲，
-        // 避免 Catmull-Rom 那种"爬升段先冲出一点再回落"的莫名突起
+        // 保形平滑（monotone cubic Hermite）：切线按相邻割线限制，抑制过冲
         function _smoothPath(points) {
             if (points.length === 2) return `M${points[0][0]},${points[0][1]} L${points[1][0]},${points[1][1]}`;
             const n = points.length;
@@ -4407,12 +4134,10 @@
             const WINDOW = 60;                // X 轴窗口：60 秒（同任务管理器）
             const newestTS = _memHistory[_memHistory.length - 1][0];
 
-            // 只保留 90 秒内的点（60 秒窗口 + 30 秒滑出余量，SVG 自动裁剪超界部分）
             let pts = _memHistory.filter(p => (now - p[0]) <= WINDOW + 30 && (now - p[0]) >= -10);
             if (!pts.length) pts = _memHistory.slice(-1);  // 全部超窗时保底显示最新一点
 
-            // Y 轴自适应：跟随窗口内数据 min/max 上下留边，放大微小变化（LuCI 风格）；
-            // 设最小跨度，避免采样噪声被过度放大成剧烈抖动
+            // Y 轴自适应跟随窗口内 min/max 并设最小跨度，避免采样噪声被过度放大成剧烈抖动
             let wantMin = Infinity, wantMax = -Infinity;
             for (const p of pts) { if (p[1] < wantMin) wantMin = p[1]; if (p[1] > wantMax) wantMax = p[1]; }
             const span = Math.max(wantMax - wantMin, 5);      // 5MB 最小跨度：稳定时曲线压平、留白更大
@@ -4432,14 +4157,12 @@
 
             let points;
             if (pts.length === 1) {
-                // 仅一个点时（刷新后初期/数据被过滤窗剔到只剩最新点），画一条位于当前值高度的水平线，
-                // 避免左侧被硬压到 Y 轴底部造成"趋势线最左端贴底"的假象
+                // 仅一个点时画一条位于当前值高度的水平线，避免左侧被硬压到 Y 轴底部造成「最左端贴底」的假象
                 const v = pts[0][1];
                 const y1 = padT + plotH - ((Math.max(yMin, Math.min(v, yMax)) - yMin) / yRange) * plotH;
                 points = [[padL, y1], [padL + plotW, y1]];
             } else {
                 points = pts.map(p => {
-                    // X 轴相对最新采样点映射：最新值固定贴右缘，新采样到达时整体左移一格（一秒一动，右缘无跳动）
                     const x = padL + plotW * (1 - (newestTS - p[0]) / WINDOW);
                     const y = padT + plotH - ((Math.max(yMin, Math.min(p[1], yMax)) - yMin) / yRange) * plotH;
                     return [x, y];
@@ -4469,7 +4192,6 @@
                 const data = await api('/api/system/usage');
                 const memMb = data.process.memory_mb;
                 document.getElementById('sys-proc-mem').textContent = memMb;
-                // 服务端历史为 [时间戳, 值] 列表（跨设备共享）；无历史时本地累积
                 if (Array.isArray(data.history) && data.history.length) {
                     _memHistory.splice(0, _memHistory.length,
                         ...data.history.filter(h => Array.isArray(h) && h.length === 2).slice(-600));
@@ -4481,12 +4203,10 @@
             } catch (e) { /* 忽略，下次轮询重试 */ }
         }
 
-        // 统一设置下拉选单开关状态
         function setDrawer(open) {
             const drawer = document.getElementById('drawer');
             if (!drawer) return;
             drawer.classList.toggle('open', open);
-            // 同步汉堡按钮动画：菜单开→三条横线旋转成向下的 V；关→还原三条横线
             const hamBtn = document.getElementById('hamburgerBtn');
             if (hamBtn) hamBtn.classList.toggle('open', open);
         }
@@ -4497,14 +4217,12 @@
             if (!drawer) return;
             setDrawer(!drawer.classList.contains('open'));
         }
-        // 点击下拉选单之外关闭
         document.addEventListener('click', function (e) {
             const drawer = document.getElementById('drawer');
             if (!drawer || !drawer.classList.contains('open')) return;
             if (!drawer.contains(e.target)) setDrawer(false);
         });
 
-        // Esc：先关仍存在的通用弹层（媒体查重等）；再在订阅探索/详情整页逐级返回；最后关抽屉
         document.addEventListener('keydown', function (e) {
             if (e.key !== 'Escape') return;
             if (document.querySelector('.tmdb-modal-overlay')) {
@@ -4521,7 +4239,7 @@
         });
 
         // ============ 日志动态：桌面端右上角面板 + 移动端日志页 ============
-        // 渲染日志列表：拆出时间戳（HH:MM:SS）与内容；超长行默认截断，点击展开/收起全文
+        // 渲染日志列表：拆出时间戳与内容，超长行默认截断、点击展开/收起全文
         function renderLogLines(container, lines) {
             if (!container) return;
             if (!lines || !lines.length) {
@@ -4564,7 +4282,7 @@
         }
 
         // ============ 通知与加载 ============
-        // 通知条 / 页内提示：原先两套实现逐行重复（图标映射、innerHTML、定时收起），仅容器与收起时长不同
+        // 通知条 / 页内提示统一：原先两套实现逐行重复，仅容器与收起时长不同
         function _toast(el, message, type, className, timeout) {
             if (!el) return;
             el.className = className;
@@ -4603,10 +4321,7 @@
         }
 
         // 配置分组：一个卡片内放多个配置项
-        //
-        // 注意：分组的 key 必须属于当前章节（章节名 = templete.env 里 `# 章节名` 那一行）。
-        // 若把 key 写进了别的章节，itemMap 里找不到它 → 分组条件为假 → 卡片整个不渲染，
-        // 表现为「配置项在页面上凭空消失」。加新键时请同步确认它在 templete.env 的归属章节。
+        // 注意：分组的 key 必须属于当前章节（templete.env 里 `# 章节名` 那一行），否则 itemMap 找不到它 → 卡片整个不渲染（配置项凭空消失）
         const ENV_GROUPS = {
             '用户配置': [
                 { title: '123 账号与密码', keys: ['ENV_123_CLIENT_ID', 'ENV_123_CLIENT_SECRET'], single: true },
@@ -4615,15 +4330,11 @@
                 { title: '其他配置项', keys: ['ENV_KUAKE_COOKIE', 'ENV_TMDB_API_KEY'], single: true }
             ]
         };
-        // 前端不再展示的配置项（功能仍保留，读 user.env 中的值）
-        // ENV_PANFX_BASE 属高级项：站点域名换过一次（pan1.me / 123panfx.com），
-        // 普通使用不要暴露，改 user.env 即可。
-        // ENV_PANFX_AUTO_REPLY 恒为 1（解锁必自动回复，站点"回复后再查看"），前端不需要开关。
+        // 前端不再展示的配置项（功能仍保留，读 user.env）：ENV_PANFX_BASE 属高级项（站点域名换过一次），改 user.env 即可
+        // ENV_PANFX_AUTO_REPLY 恒为 1（解锁必自动回复，站点「回复后再查看」），前端不需要开关
         const HIDDEN_KEYS = new Set(['ENV_DIY_LINK_PWD', 'ENV_AUTO_MAKE_JSON', 'ENV_MAKE_NEW_LINK', 'ENV_PANFX_BASE', 'ENV_PANFX_AUTO_REPLY']);
-        // 以明文显示（不隐藏）的敏感字段
         const FORCE_TEXT_KEYS = new Set(['ENV_TG_BOT_TOKEN', 'ENV_KUAKE_COOKIE', 'ENV_PANFX_COOKIE']);
 
-        // 去掉设置说明中括号内的内容
         function cleanLabel(c) {
             return (c || '').replace(/[（(][^）)]*[）)]/g, '').trim();
         }
@@ -4643,7 +4354,6 @@
             };
         }
 
-        // 开关控件：单卡与分组共用同一套 DOM
         function _switchHtml(m, sectionName, item) {
             const on = item.value === '1';
             return `<label class="switch">
@@ -4653,7 +4363,6 @@
             </label>`;
         }
 
-        // 文本 / 密码输入框：单卡与分组共用
         function _inputHtml(m, sectionName) {
             return `<div class="form-group">
                 <label>${m.isRequired && !m.label.includes('必填') ? '必填：' : ''}${m.label}</label>
@@ -4687,7 +4396,6 @@
             const m = _fieldMeta(item);
             const span = (group.wide || []).includes(item.key) ? ' span-2' : '';
             if (m.isBool) {
-                // 行内开关：文字在左、开关在右
                 if ((group.inlineToggles || []).includes(item.key)) {
                     return `<div class="group-field${span}">
                         <div class="group-row">
@@ -4711,7 +4419,6 @@
             if (group.rightToggle) groupKeys.push(group.rightToggle);
             let fields = [];
 
-            // 合并的分享类转存目录
             if (group.mergePid) {
                 const pidItems = MERGE_PID_KEYS.map(k => itemMap[k]).filter(Boolean);
                 if (pidItems.length > 0) {
@@ -4779,7 +4486,6 @@
             });
 
             container.innerHTML = `<div class="cfg-grid">${cards}</div>`;
-            // 给 checkbox 加 change 事件更新文本
             container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
                 cb.addEventListener('change', function() {
                     const span = this.parentElement.querySelector('.switch-state');
@@ -4799,9 +4505,7 @@
             }
         }
 
-        // 填充静态表单（资源转存 Tab：与 STRM/文件整理一致的平铺样式）
         function fillStaticEnvSection(sectionName) {
-            // 开关在卡片标题区，字段在容器内，统一以整个 Tab 为查询范围
             const scope = document.querySelector('#tab-transfer-save');
             if (!scope) return;
             const map = {};
@@ -4822,8 +4526,7 @@
         }
 
         // ============ Env 配置保存 ============
-        // 顶部"保存配置"统一入口：一次性保存所有 Tab 的配置，热更新运行时（不重启）
-        // 注意：只有「已打开过」的 Tab 才提交其配置，避免未加载的表单用默认值覆盖已保存的配置
+        // 顶部「保存配置」一次性保存所有 Tab 配置并热更新；只提交「已打开过」的 Tab，避免未加载表单用默认值覆盖已存配置
         async function saveTopConfig() {
             const transferData = window._transferLoaded ? collectTransferConfig() : null;
             const strmData = window._strmLoaded ? collectStrmConfig() : null;
@@ -4831,19 +4534,16 @@
             const envPayload = collectEnvPayload();
             showLoading('正在保存全部配置...');
             const errors = [];
-            // 1. 先保存整理配置（热更新，不重启；未打开过该 Tab 则跳过）
             if (transferData) {
                 try { await api('/api/transfer/config', 'POST', transferData); }
                 catch (e) { errors.push('整理配置: ' + e.message); }
             }
-            // 2. 再保存 STRM 配置（热更新，不重启；未打开过该 Tab 则跳过）
             if (strmData) {
                 try { await api('/api/strm/config', 'POST', strmData); }
                 catch (e) { errors.push('STRM: ' + e.message); }
             }
             // 3. 再保存 MediaWarp 配置（按「启用反代」开关立即启停；未打开过该 Tab 时不提交，避免覆盖已存配置）
             if (mwarpData) {
-                // 前端校验：确保启用时必填字段已填写
                 if (mwarpData.ENV_MWARP_ENABLED === '1') {
                     if (!mwarpData.ENV_MWARP_MEDIASERVER_ADDR || !mwarpData.ENV_MWARP_MEDIASERVER_AUTH) {
                         errors.push('MediaWarp: 请先填写媒体服务器地址和 API Key');
@@ -4856,7 +4556,6 @@
                     catch (e) { errors.push('MediaWarp: ' + e.message); }
                 }
             }
-            // 4. 再保存环境配置（restart:false = 热更新，不重启）
             try { await api('/api/env', 'POST', Object.assign({}, envPayload, { restart: false })); }
             catch (e) { errors.push('环境配置: ' + e.message); }
             hideLoading();
@@ -4867,14 +4566,12 @@
             }
         }
 
-        // 侧边栏"重启系统"：重启服务使配置生效（不保存配置）
         async function restartSystem() {
             if (!confirm('⚠️ 确定要重启系统吗？\n重启期间服务将短暂不可用，未保存的修改将丢失。')) return;
             showLoading('正在重启系统...');
             try {
                 await api('/api/restart', 'POST');
             } catch (e) {
-                // 重启会断开连接，网络错误属正常
             }
             setTimeout(() => {
                 hideLoading();
@@ -4882,7 +4579,6 @@
             }, 5000);
         }
 
-        // 收集文件整理配置
         function collectTransferConfig() {
             return {
                 ENV_TRANSFER_ENABLED: document.getElementById('cfg-enabled').checked ? '1' : '0',
@@ -4903,20 +4599,17 @@
             };
         }
 
-        // 版本优先 chips：开关控制启停，chip 点击切换参与状态
         function syncPvChips() {
             const on = document.getElementById('cfg-pv-enable').checked;
             document.getElementById('pv-group').classList.toggle('disabled', !on);
             syncRatioGate();
         }
-        // 闭合显示数字或「关闭」；「倍」仅在有数值时显示
         function syncRatioEx() {
             const sel = document.getElementById('cfg-size-ratio');
             const has = !!sel.value;
             document.getElementById('ratio-current').textContent = has ? sel.value : '关闭';
             document.getElementById('ratio-unit').style.display = has ? '' : 'none';
         }
-        // 倍率选框联动：开关关闭或未选中任何版本 → 强制「关闭」且不可点击
         function syncRatioGate() {
             const usable = document.getElementById('cfg-pv-enable').checked
                 && document.querySelectorAll('#pv-group .pv-chip.active').length > 0;
@@ -4936,7 +4629,6 @@
             });
         });
 
-        // 收集环境配置（用户配置 + 资源转存）
         function collectEnvPayload() {
             const payload = {};
             ['用户配置', '资源转存'].forEach(section => {
@@ -4951,7 +4643,6 @@
                     if (input.type === 'checkbox') {
                         value = input.checked ? '1' : '0';
                     }
-                    // 合并的转存目录：同一值同步写入 5 个 key
                     if (input.dataset.mergePid) {
                         MERGE_PID_KEYS.forEach(k => {
                             payload[section].push({
@@ -5022,7 +4713,6 @@
                 document.getElementById('cfg-scrape').checked = c.ENV_TRANSFER_SCRAPE !== '0';
                 document.getElementById('cfg-movie-format').value = c.ENV_TRANSFER_MOVIE_FORMAT || '';
                 document.getElementById('cfg-tv-format').value = c.ENV_TRANSFER_TV_FORMAT || '';
-                // 版本优先替换回显：未配置过 → 开关开 + 全选（默认）；配置为空串 → 开关关；配置非空 → 按实际勾选
                 const hasPv = Object.prototype.hasOwnProperty.call(c, 'ENV_TRANSFER_PRIORITY_VERSIONS');
                 const pvRaw = hasPv ? (c.ENV_TRANSFER_PRIORITY_VERSIONS || '') : null;
                 document.getElementById('cfg-pv-enable').checked = pvRaw !== '';
@@ -5030,7 +4720,6 @@
                 document.querySelectorAll('#pv-group .pv-chip').forEach(ch => {
                     ch.classList.toggle('active', pvRaw ? pv.includes(ch.dataset.val) : true);
                 });
-                // 体积豁免回显：无配置或值不在选项内 → 关闭
                 const ratioRaw = (c.ENV_TRANSFER_SIZE_OVERRIDE_RATIO || '').trim();
                 const ratioSel = document.getElementById('cfg-size-ratio');
                 ratioSel.value = Array.from(ratioSel.options).some(o => o.value === ratioRaw) ? ratioRaw : '';
@@ -5042,13 +4731,11 @@
         }
 
         // ============ 后台任务 - 手动触发（">" 按钮） ============
-        // 点击后二次确认；触发中对应任务图标高亮（蓝色），结束恢复。
-        // transfer/strm 为后台任务，触发成功后轮询状态接口，任务真正结束时图标恢复。
+        // 点击后二次确认；触发中图标高亮，transfer/strm 需轮询状态接口直到任务真正结束才恢复
         const _taskActive = { channel: false, transfer: false, strm: false, catalog: false, rewrite: false };
         let _transferWasActive = false;
 
-        // 全量同步 / 入册 / 改写 三个分支只差接口 action 与几句文案，抽出一处共用。
-        // 网关超时或断连时任务其实已经触发，按成功提示，避免误报失败。
+        // 三个分支只差接口 action 与几句文案，故抽出一处共用；网关超时或断连时任务其实已触发，按成功提示避免误报失败
         async function _runStrmAction(action, loadingMsg, offlineMsg, okFallback) {
             showLoading(loadingMsg);
             let r = null;
@@ -5123,7 +4810,6 @@
         let historyPage = 1;
         let historyTotal = 0;
         const HISTORY_SIZE = 10;
-        // 整理历史每 10 秒自动刷新（进入系统状态页时启动，离开时停止）
         let historyTimer = null;
         function startHistoryPolling() {
             if (historyTimer) return;
@@ -5208,7 +4894,6 @@
                 heroSearchLiveScoped(inp.value);   // 切回影视时立即应用海报过滤
             }
         }
-        // 多功能图标：开合作用域菜单
         function toggleScopeMenu(e) {
             if (e) e.stopPropagation();   // 避免立即被外部点击关闭逻辑收起
             const m = document.getElementById('scopeMenu');
@@ -5219,12 +4904,10 @@
             const m = document.getElementById('scopeMenu');
             if (m) m.classList.remove('open');
         }
-        // 清空顶部搜索：输入框文字清空，影视海报还原全量、整理历史还原全量
         function _clearHeroSearch() {
             const inp = document.querySelector('.hero-search .hero-search-input');
             const kw = inp ? (inp.value || '').trim() : '';
-            // 无可清内容（输入框已空 + 海报未被过滤 + 历史无关键词）时直接返回：
-            // 否则「点击页面任意位置」都会走一遍还原逻辑，重建海报轮播（闪一下并跳回中间那张）
+            // 无可清内容时直接返回，否则点页面任意位置都会走一遍还原逻辑，重建轮播并跳回中间那张
             const posterFiltered = _entryPosterItems.length !== _entryPosterAll.length ||
                 !_entryPosterItems.every((it, i) => it === _entryPosterAll[i]);
             if (!kw && !posterFiltered && !(_searchScope === 'history' && historyKeyword)) return;
@@ -5236,7 +4919,6 @@
                 loadHistory(1);                     // 整理历史还原全量
             }
         }
-        // 点击作用域菜单外部：收起；点击搜索卡片外：清空搜索
         document.addEventListener('click', function (e) {
             const m = document.getElementById('scopeMenu');
             if (m && m.classList.contains('open')) m.classList.remove('open');
@@ -5248,9 +4930,7 @@
                 _clearHeroSearch();
             }
         });
-        // 输入分发：整理/日志 scope 下不实时过滤海报，只等回车。
-        // 影视 scope 加 160ms 防抖：原先每个字符都要重建一次轮播 + 重放背景淡入淡出 + 滚动，
-        // 连打时肉眼就是闪屏加抖动。合并成一次既不掉帧，也感觉不到延迟。
+        // 整理/日志 scope 只等回车；影视 scope 加 160ms 防抖，否则每字符都要重建轮播 + 重放背景淡入淡出 + 滚动，连打就是闪屏加抖动
         let _heroSearchTimer = null;
         let _heroSearchPrevKw = '';   // 上一次生效的过滤词，用于判断「是否刚进入搜索」
         const HERO_SEARCH_DEBOUNCE = 160;
@@ -5262,24 +4942,20 @@
                 heroSearchLive(kw);
             }, HERO_SEARCH_DEBOUNCE);
         }
-        // 重开/重置海报轮换定时器
         function _restartEntryPoster() {
             if (_entryPosterTimer) clearTimeout(_entryPosterTimer);
             _entryPosterTimer = _entryPosterItems.length > 1
                 ? setTimeout(() => _stepEntryPoster(1), 12 * 60 * 60 * 1000)
                 : null;
         }
-        // ① 实时过滤订阅探索海报（标题包含匹配）；清空时还原全量池
         function heroSearchLive(kw) {
-            // 直接调用（点空白清空 / 切作用域）要取消尚未触发的防抖，
-            // 否则清空之后 160ms 那个旧关键词又会被应用回来。
+            // 直接调用（点空白清空 / 切作用域）要取消尚未触发的防抖，否则清空之后 160ms 旧关键词又被应用回来
             if (_heroSearchTimer) { clearTimeout(_heroSearchTimer); _heroSearchTimer = null; }
             kw = (kw || '').trim().toLowerCase();
             const wasEmpty = !_heroSearchPrevKw;
             _heroSearchPrevKw = kw;
             if (!kw) {
-                // 当前已是全量池：无需重建。_buildEntryCarousel 会重新铺一遍 <img>
-                // 并把轮播索引复位到中间，空调用会表现为「海报闪一下、跳回第一张」
+                // 当前已是全量池则无需重建：重建会重铺 <img> 并把索引复位到中间，表现为海报闪一下、跳回第一张
                 const same = _entryPosterItems.length === _entryPosterAll.length &&
                     _entryPosterItems.every((it, i) => it === _entryPosterAll[i]);
                 if (same) return;
@@ -5294,9 +4970,7 @@
             }
             _entryPosterItems = matches;
             _buildEntryCarousel();
-            // 海报若在视口区外（页面已滚走、搜索条脱流浮在顶部），滚到可见让用户看到过滤结果。
-            // 只在「从空关键词进入搜索」时滚一次：每次输入都 scrollIntoView 会让连续的平滑滚动
-            // 互相打断，画面来回抖；已经在看海报时也不需要再滚。
+            // 海报在视口外时滚到可见，但只在「从空关键词进入搜索」时滚一次 —— 每次输入都滚会让平滑滚动互相打断
             if (wasEmpty) {
                 const ps = document.getElementById('tmdb-poster');
                 if (ps) {
@@ -5307,7 +4981,6 @@
                 }
             }
         }
-        // ② 按回车执行搜索（按当前作用域分发）：影视→滚动到海报并清空；整理→过滤历史并清空；日志→跳转日志页并前端过滤
         function heroSearchCommit() {
             const inp = document.querySelector('.hero-search .hero-search-input');
             const kw = (inp && inp.value || '').trim();
@@ -5353,7 +5026,6 @@
                 }
             }
         }
-        // 手动打开日志页：清除过滤词，回到全量日志
         function clearLogsFilter() {
             window._logsFilterKey = '';
         }
@@ -5375,8 +5047,7 @@
 
         // ============ 整理历史多选 & 批量删除 ============
 
-        // 进入/退出多选态的统一入口：把「图标、标题显隐、批量按钮、计数」四处 UI 状态
-        // 集中在 _applyHistorySelectUI，避免 toggle 与 exit 两处各写一遍而走歪。
+        // 进入/退出多选态的统一入口：UI 状态集中在 _applyHistorySelectUI，避免 toggle 与 exit 两处各写一遍而走歪
         function _applyHistorySelectUI() {
             const btn = document.querySelector('.multi-select-btn');
             const icon = btn ? btn.querySelector('i') : null;
@@ -5421,7 +5092,6 @@
         }
 
         function updateHistorySelection() {
-            // 从当前页的 checkbox 同步 selectedHistoryIds
             document.querySelectorAll('.history-row-check').forEach(cb => {
                 const id = parseInt(cb.dataset.id);
                 if (cb.checked) {
@@ -5431,13 +5101,11 @@
                 }
             });
             const count = selectedHistoryIds.size;
-            // 更新标题行计数
             const countEl = document.querySelector('.history-select-count');
             if (countEl) {
                 countEl.textContent = `已选 ${count} 项`;
                 countEl.style.display = count > 0 ? 'inline' : 'none';
             }
-            // 更新操作栏按钮状态（未选中时置灰）
             const actions = document.querySelector('.history-batch-actions');
             if (actions) {
                 actions.querySelectorAll('.history-batch-link').forEach(el => el.classList.toggle('disabled', count === 0));
@@ -5451,9 +5119,7 @@
                 ? `确定深度删除这 ${count} 条记录？\n\n将执行四件套：\n1. 删除整理历史记录\n2. 删除本地 STRM 文件\n3. 删除网盘源文件（移入回收站）\n4. 通知 Emby 删除条目`
                 : `确定删除选中的 ${count} 条整理历史记录？`;
             if (!confirm(msg)) return;
-            // 删除期间显示加载动画并禁用两个按钮，防止重复点击提交多份删除请求。
-            // 深度删除要跑「删记录+删 STRM+移网盘回收站+通知 Emby」四件事、逐条串行，
-            // 条数多时可能几十秒；原先没有任何进行中反馈，用户会以为没点上而反复点。
+            // 删除期间禁用两个按钮：深度删除要串行跑四件事、条数多时几十秒，没有进行中反馈用户会反复点
             const actions = document.querySelector('.history-batch-actions');
             const progress = document.querySelector('.history-batch-progress');
             const links = actions ? [...actions.querySelectorAll('.history-batch-link')] : [];
@@ -5476,24 +5142,18 @@
                 } else {
                     showTransferAlert(`已删除 ${r.deleted||0} 条`, 'success');
                 }
-                // 删除后自动退出多选态：删除动作已完成，继续停在多选里只会让用户面对
-                // 一堆刚被删空的选中状态。exitHistorySelect 内部会清空选中集并刷新列表。
                 exitHistorySelect();
             } catch (e) {
                 showTransferAlert('删除失败: ' + e.message, 'error');
                 loadHistory();
             } finally {
-                // 无论成功失败都要收掉加载态，否则失败后按钮会永久卡在禁用状态。
-                // 注意 exitHistorySelect 会把多选收起、连带隐藏 progress 容器，
-                // 这里再兜一次是为了失败分支（未退出多选）也能恢复可点。
+                // 无论成功失败都要收掉加载态，否则按钮永久卡在禁用；exitHistorySelect 会连带隐藏 progress，这里再兜一次
                 if (progress) progress.style.display = 'none';
                 links.forEach(el => el.classList.remove('disabled'));
                 updateHistorySelection();
             }
         }
 
-        // 退出多选态（直接置为关闭）：删除成功后调用，让界面回到普通浏览态。
-        // UI 显隐统一走 _applyHistorySelectUI，与 toggleHistorySelect 共用同一套逻辑。
         function exitHistorySelect() {
             if (!historySelectMode) { loadHistory(); loadMediaStats(); return; }
             historySelectMode = false;
@@ -5540,7 +5200,6 @@
             }
         }
 
-        // 收集 STRM 配置（与后端 ENV_STRM_* 键一一对应）
         function collectStrmConfig() {
             return {
                 ENV_STRM_ENABLED: document.getElementById('strm-enabled').checked ? '1' : '0',
@@ -5578,14 +5237,12 @@
                 document.getElementById('mw-addr').value = cfg.ENV_MWARP_MEDIASERVER_ADDR || '';
                 document.getElementById('mw-auth').value = cfg.ENV_MWARP_MEDIASERVER_AUTH || '';
                 document.getElementById('mw-prefixes').value = cfg.ENV_MWARP_STRM_PREFIXES || '';
-                // 「启用反代」开关：点开即启动、关闭即停止
                 document.getElementById('mw-enabled').onchange = onMediaWarpEnabledChange;
             } catch (e) {
                 showNotification('加载 MediaWarp 配置失败: ' + e.message, 'error');
             }
         }
 
-        // 收集 MediaWarp 配置（与后端 ENV_MWARP_* 键一一对应）
         function collectMediaWarpConfig() {
             return {
                 ENV_MWARP_ENABLED: document.getElementById('mw-enabled').checked ? '1' : '0',
@@ -5597,7 +5254,6 @@
             };
         }
 
-        // 「启用反代」开关：点开即保存并启动，关闭即停止
         async function onMediaWarpEnabledChange() {
             const data = collectMediaWarpConfig();
             if (data.ENV_MWARP_ENABLED === '1') {
@@ -5654,7 +5310,6 @@
                 showNotification('加载媒体洗版状态失败: ' + e.message, 'error');
             }
         }
-        // 杜比视界优先开关随结果动态渲染，用事件委托统一绑定（切换后重新渲染默认勾选）
         document.addEventListener('change', function (e) {
             if (e.target && e.target.id === 'emby-dv-priority') {
                 localStorage.setItem('emby_dv_priority', e.target.checked ? '1' : '0');
@@ -5695,9 +5350,7 @@
         }
 
         // ============ 后台任务状态轮询（单一数据源） ============
-        // 原先 3s 的 pollBgTaskIcons 与 10s 的 loadBgTasks 各自拉同一个 /api/tasks/status，
-        // 每轮接口被请求两遍、renderBgTasks() 把整块 DOM 重写两遍。现在只有一个定时器：
-        // 手动触发任务或有任务在跑时用 3s 快轮询，全部空闲后自动回落 10s（由 loadBgTasks 回调切换）。
+        // 只保留一个定时器：手动触发或有任务在跑时 3s 快轮询，全部空闲后回落 10s（此前两个定时器各拉一遍接口、重写两遍 DOM）
         const BG_POLL_FAST = 3000, BG_POLL_IDLE = 10000;
         let _bgTasksTimer = null;
         let _bgTasksInterval = 0;
@@ -5729,7 +5382,6 @@
             try {
                 _bgTasks = await api('/api/tasks/status');
                 _bgLoaded = true;
-                // 同步图标高亮：页面打开时已有任务在跑也亮起
                 const ch = _bgTasks.channel_monitor || {};
                 const tf = _bgTasks.transfer || {};
                 const sm = _bgTasks.strm_full_sync || {};
@@ -5743,9 +5395,7 @@
                 _taskActive.rewrite = !!sm.rewrite_busy;
                 renderBgTasks();
                 renderBgCountdown();
-                // 后台任务卡片高度已确定 → 重绘 Emby 图表以适应
                 if (_embyUsage) renderEmbyUsageChart();
-                // 任务开始/结束：在快轮询与空闲轮询之间自动切换
                 startBgTasksPolling();
             } catch (e) {
                 grid.innerHTML = `<div class="empty-row">任务状态加载失败: ${escapeHtml(e.message)}</div>`;
@@ -5773,12 +5423,10 @@
             const ch = t.channel_monitor || {};
             const tf = t.transfer || {};
             const st = t.strm_full_sync || {};
-            // 状态标签：off=未开启(灰点)，busy=执行中(橙点)，on=已启用/运行中(绿点)
             const tag = (state, text) =>
                 `<span class="bg-task-state${state === 'off' ? ' off' : ''}">` +
                 `<span class="bg-dot"${state === 'busy' ? ' style="background:var(--warning);"' : ''}></span>${text}</span>`;
-            // 五项任务的「状态判定 + 名称/图标/触发」集中在这张表里，
-            // 原先是 5 段 if/else + 5 段逐字同构的行 HTML 复制粘贴
+            // 五项任务的「状态判定 + 名称/图标/触发」集中在这张表里
             const defs = [
                 { key: 'channel', icon: 'fa-broadcast-tower', name: '频道监控',
                   title: '手动触发一次频道监控',
@@ -5839,7 +5487,6 @@
             const body = document.getElementById('emby-usage-body');
             const btns = Array.from(document.querySelectorAll('.emby-usage-load-btn'));
             if (!body) return;
-            // 禁用按钮
             btns.forEach(b => {
                 b.disabled = true;
                 b.style.color = 'var(--text-400)';
@@ -5869,7 +5516,6 @@
             }
         }
 
-        // 秒 -> 可读时长。style='short' 为紧凑式（3h05m），默认中文长式（3小时5分）
         function fmtDuration(sec, style) {
             sec = Math.max(0, Math.round(sec || 0));
             if (style === 'short') {
@@ -5897,14 +5543,12 @@
             }
             const mobile = window.matchMedia('(max-width: 768px)').matches;
             const W = mobile ? 460 : 800;
-            // H 自适应容器高度：读取 body 实际可用空间，最小 220px，桌面端最多 360px
             let H = mobile ? 250 : 220;
             const cardBody = body;
             if (!mobile && cardBody) {
                 const card = cardBody.closest('.card');
                 if (card) {
                     const cardH = card.clientHeight;
-                    // 减去标题 + body 上下内边距 + legend 行高（约 36px）
                     const avail = Math.max(220, cardH - 80);
                     H = Math.min(360, avail);
                 }
@@ -5914,7 +5558,6 @@
             let maxV = 0;
             users.forEach(u => (u.durations || []).forEach(v => { if (v > maxV) maxV = v; }));
             if (maxV <= 0) maxV = 3600;
-            // Y 轴刻度取整：时长小取整秒、偏大取整分钟，网格刻度为整齐数值
             maxV = maxV < 120 ? Math.max(60, Math.ceil(maxV)) : Math.ceil(maxV / 60) * 60;
             const n = days.length || 1;
             const xAt = i => ML + (n === 1 ? pw / 2 : pw * i / (n - 1));
@@ -5934,15 +5577,11 @@
             });
 
             let lines = '', points = '';
-            // 保形平滑（monotone cubic Hermite）：切线按相邻割线限制，抑制过冲（曲线不会先冲出再回落）
             users.forEach((u, ui) => {
                 const c = colors[ui % colors.length];
-                // 复用 _smoothPath（同一套 monotone cubic Hermite 算法），入参 zip 成 [x, y] 即可
                 const pts = (u.durations || []).map((v, i) => [xAt(i), yAt(v || 0)]);
                 const dPath = _smoothPath(pts);
-                // 平滑曲线本体
                 lines += `<path d="${dPath}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-                // 加一条透明的粗命中层（保留原折线上的任意点点击逻辑）
                 const coords = (u.durations || []).map((v, i) => `${xAt(i)},${yAt(v || 0)}`);
                 lines += `<polyline points="${coords.join(' ')}" fill="none" stroke="transparent" stroke-width="14" cursor="pointer" style="cursor:pointer;"
                     data-uid="${escapeHtml(u.id)}" data-uname="${escapeHtml(u.name)}" data-xs="${days.map((_, i) => xAt(i)).join(',')}"
@@ -5957,8 +5596,7 @@
                 });
             });
 
-            // 图例文字必须显式设深色：卡片底色是 75% 白，而 body 默认 color:#fff，
-            // 不设色就会继承成白字压在浅底上，几乎看不清（此前 home/root 发白就是这个原因）
+            // 图例文字必须显式设深色：卡片底色是 75% 白而 body 默认 color:#fff，不设色就是白字压浅底几乎看不清
             const legend = users.map((u, ui) =>
                 `<span style="display:inline-flex;align-items:center;margin-right:12px;font-size:12px;margin-bottom:4px;color:var(--text-900);">
                     <span style="width:10px;height:10px;border-radius:50%;background:${colors[ui % colors.length]};display:inline-block;margin-right:4px;"></span>${escapeHtml(u.name)}
@@ -5971,7 +5609,6 @@
             body.innerHTML = `
                 <div style="margin:6px 0 2px;">${legend}</div>
                 <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${svgH}px;display:block;">${grid}${xlabels}${lines}${points}</svg>`;
-            // 跨 768px 断点时按当前视口重绘（matchMedia 事件只在状态变化时触发一次）
             if (_embyMQ) _embyMQ.onchange = null;
             _embyMQ = window.matchMedia('(max-width: 768px)');
             _embyMQ.onchange = () => renderEmbyUsageChart();
@@ -5981,7 +5618,6 @@
             showEmbyUsageDay(el.dataset.uid, el.dataset.uname, el.dataset.date);
         }
 
-        // 点到折线上任意位置：按 x 取最近的日期打开明细，不用精确点中圆点
         function embyLinePoint(ev, el) {
             const svg = el.ownerSVGElement;
             if (!svg) return;
@@ -6084,13 +5720,11 @@
                 if (capEl) capEl.innerHTML = '<span style="color:var(--text-400);font-size:9px;">—</span>';
                 return;
             }
-            // 拆分容量字符串为 数字 + 单位（如 "86.3 TB" -> 86.3 / TB）
             const _split = s => {
                 const m = String(s).match(/^([\d.]+)\s*([A-Z]+)$/);
                 return m ? { num: m[1], unit: m[2] } : { num: s, unit: '' };
             };
             const total = _split(fmtSize(stats.total_size));
-            // 环形图：电影 / 电视剧 按容量占比
             const R = 38, C = 2 * Math.PI * R, GAP = 10, OVERLAP = 8;
             const ratio = v => Math.max(0, Math.min(1, v));
             const mR = ratio(stats.total_size ? stats.movie_size / stats.total_size : 0);
@@ -6109,7 +5743,6 @@
                     <text x="50" y="65" text-anchor="middle" font-size="7" fill="#94A3B8">${total.unit}</text>
                 </svg>
             `;
-            // 媒体计数：电影 / 电视剧 部数，显示在卡片底部中间（同一行）
             const capEl = document.getElementById('emby-cap');
             if (capEl) capEl.innerHTML = `
                 <span class="mc-group"><span class="mc-label">电影</span> <span class="mc-num">${stats.movie_count || 0}</span></span>
@@ -6125,7 +5758,6 @@
             if (!alertEl) return;  // 弹窗未打开：只更新系统页圆环图
             alertEl.className = 'alert';
             alertEl.innerHTML = '';
-            // 中间操作区：扫描中显示加载，空闲显示开始扫描按钮
             actionsEl.innerHTML = s.busy
                 ? '<span class="chip chip-info"><i class="fas fa-spinner fa-spin"></i> 扫描中...</span>'
                 : '<button class="btn btn-action" onclick="runEmbyScan()">开始扫描</button>';
@@ -6164,8 +5796,7 @@
                 html += `<div style="margin-bottom: 14px;">
                     <div style="font-weight: 600; margin-bottom: 8px;">${lib} <span class="chip chip-warn">${glist.length} 组重复</span> <span class="chip chip-err">可释放 ${fmtSize(libRedundant)}</span></div>`;
                 glist.forEach(g => {
-                    // 默认保留决策：启用"杜比视界优先"且组内有 DV → 保留 DV 中体积最大的；
-                    // 否则按原逻辑保留体积最大的（同大小保留第一个），其余默认勾选删除
+                    // 默认保留决策：启用「杜比视界优先」且组内有 DV → 保留 DV 中体积最大的，否则保留体积最大的
                     const dvIdx = g.files.map((f, i) => i).filter(i => g.files[i].dv);
                     let keepIdx;
                     if (dvOn && dvIdx.length) {
@@ -6232,8 +5863,7 @@
         }
 
         // ============ 全局手指滑动：切换「系统 / 后台」页 ============
-        // 滑动落在订阅探索海报卡片上时只切海报（海报自身已绑定滑动），不切整页；
-        // 弹层/抽屉打开、或处于设置子页/日志页时不响应。
+        // 滑动落在订阅探索海报卡上时只切海报；弹层/抽屉打开，或处于设置子页/日志页时不响应
         function bindPageSwipe() {
             let sx = 0, sy = 0, se = null;
             document.addEventListener('touchstart', (e) => {
@@ -6250,16 +5880,13 @@
                 const dx = c.clientX - sx, dy = c.clientY - sy;
                 sx = 0;
                 if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy) * 1.3) return;
-                // 手指起点在订阅探索海报卡片上：只让海报自己切换，不切整页
                 if (se && se.closest && (se.closest('#tmdb-poster') || se.closest('.tmdb-entry-card'))) return;
-                // 依据当前活动面板判断所在页，只允许「首页 / 后台」间左右滑切换
                 const cur = document.querySelector('.tab-panel.active')?.id;
                 if (cur === 'system') switchTab(dx < 0 ? 'bg' : 'system');   // 首页左右滑切后台/回首页
                 else if (cur === 'bg') switchTab(dx > 0 ? 'system' : 'bg');  // 后台右滑切回首页、左滑回后台
             }, { passive: true });
         }
 
-        // 手机端日志页：手指左滑返回（回到首页）。日志页页面级左右滑动已屏蔽，可独立判定
         function bindLogsSwipeBack() {
             if (window.matchMedia('(min-width: 769px)').matches) return; // 仅手机端
             const logs = document.getElementById('tab-logs');
