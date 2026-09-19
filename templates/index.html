@@ -844,8 +844,9 @@
         /* 热区外扩 4px：点直径 8 + gap 11 = 中心距 19，热区宽 16 < 19，相邻不重叠（重叠会命中 DOM 靠后者） */
         #tab-system .entry-dots .dot::after { content: ""; position: absolute; inset: -4px; }
         #tab-system .entry-dots .dot.on { background: #fff; }
-        /* 窗口外侧缩成小点，暗示该方向还有更多 */
+        /* 窗口外侧缩成小点，暗示该方向还有更多；由外向内 4 → 6 → 8 逐级放大，形成指向窗口中心的梯度 */
         #tab-system .entry-dots .dot.edge { width: 4px; height: 4px; opacity: .5; }
+        #tab-system .entry-dots .dot.near { width: 6px; height: 6px; opacity: .72; }
         @media (min-width: 769px) {
             #tab-system .entry-dots { bottom: -4px; }
         }
@@ -3929,11 +3930,15 @@
                     return s;
                 }));
             }
+            const hasL = start > 0, hasR = start + N < n;   // 该方向窗口外还有未显示的项
             [...dots.children].forEach((d, k) => {
                 const i = start + k;
                 const on = i === _entryPosterIdx;
-                const edge = !on && ((k === 0 && start > 0) || (k === N - 1 && start + N < n));
-                d.className = 'dot' + (on ? ' on' : '') + (edge ? ' edge' : '');
+                // 当前项恒为标准尺寸；否则贴着边界的两档依次缩小，形成向窗口中心递增的梯度
+                const cls = on ? 'on'
+                    : (k === 0 && hasL) || (k === N - 1 && hasR) ? 'edge'
+                        : (k === 1 && hasL) || (k === N - 2 && hasR) ? 'near' : '';
+                d.className = 'dot' + (cls ? ' ' + cls : '');
                 d.onclick = e => { e.stopPropagation(); _setEntryPoster(i); };   // 拦冒泡，否则会触发海报打开详情
             });
         }
