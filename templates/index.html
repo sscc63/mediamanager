@@ -1445,6 +1445,7 @@
             }
             /* 移动端：趋势榜横滑海报条全出血（轨道延伸到屏边，抵消 .content 的 16px 内边距；
                左内边距对齐标题、右内边距极小，末张海报可一路滑到屏幕右缘） */
+            .trend-rank { margin-top: 0; }        /* 收窄首页海报简介与下方「频道更新」标题的间距 */
             .trend-rank-head { padding: 0 16px; }
             .trend-rank-track { margin: 0 -16px; padding: 8px 16px 5px; }
             .card { padding: 16px; }
@@ -1475,7 +1476,7 @@
                 position: relative;                /* .entry-card absolute 的锚点 */
                 width: 100%;
                 flex: none;                        /* 停用基础规则的 flex:1，让 aspect-ratio 独掌高度，避免 cover 裁到顶部 */
-                aspect-ratio: 2 / 3;               /* 竖向纯海报 */
+                aspect-ratio: 2 / 3.1;             /* 竖向纯海报 */
                 min-height: 0;
                 padding: 0;
                 border-radius: 0;                  /* 与之前一致：全宽出血无圆角 */
