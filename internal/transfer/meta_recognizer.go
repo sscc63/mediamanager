@@ -83,8 +83,10 @@ var (
 	// 发布组：文件名末尾 [Group] 或 -Group
 	groupBracketRe = regexp.MustCompile(`[\[\(]([^\]\)]+)[\]\)]\s*$`)
 	groupDashRe    = regexp.MustCompile(`[-_]([A-Za-z0-9]+)$`)
-	// 季集：S01E02 / s01e02e03 / S01E02-E03 / 1x02 / 第N集 / 第X季第N集
-	seasonEpisodeRe = regexp.MustCompile(`(?i)(?:^|[\s\.\-_\[(])([Ss])(\d{1,2})(?:\s*[Ee]\s*(\d{1,3}))?(?:([-—])\s*[Ee]\s*(\d{1,3}))?|(\d{1,2})[xX](\d{1,3})|第\s*(\d{1,2})\s*季\s*第\s*(\d{1,3})\s*集|第\s*(\d{1,3})\s*集`)
+	// 季集：S01E02 / s01e02e03 / S01E02-E03 / 1x02 / 第N集 / 第X季第N集 / 纯 E192
+	// 纯 E 形式（凡人修仙传.E192）在国产长番里很常见，缺它会导致 Episode=0 → 误判 movie。
+	// 新分支追加在末尾（组 11/12），不能插在中间，否则下面按 se[N] 下标取值的逻辑全部错位。
+	seasonEpisodeRe = regexp.MustCompile(`(?i)(?:^|[\s\.\-_\[(])([Ss])(\d{1,2})(?:\s*[Ee]\s*(\d{1,3}))?(?:([-—])\s*[Ee]\s*(\d{1,3}))?|(\d{1,2})[xX](\d{1,3})|第\s*(\d{1,2})\s*季\s*第\s*(\d{1,3})\s*集|第\s*(\d{1,3})\s*集|(?:^|[\s\.\-_\[(])[Ee]\s*(\d{1,3})(?:\s|\.|\-|_|\]|\)|$)`)
 	// Season 1 形式
 	seasonWordRe = regexp.MustCompile(`(?i)\bSeason\s+(\d{1,2})\b`)
 	// 年份：四位数年份
@@ -156,6 +158,9 @@ func recognizeByRegex(baseName string, expectedType string) MetaInfo {
 		} else if se[10] != "" { // 第N集：无季信息，按单季第 1 季处理
 			m.Season = 1
 			m.Episode, _ = strconv.Atoi(se[10])
+		} else if se[11] != "" { // 纯 E192：无季信息，同理按第 1 季
+			m.Season = 1
+			m.Episode, _ = strconv.Atoi(se[11])
 		}
 	} else if sw := seasonWordRe.FindStringSubmatch(baseName); sw != nil {
 		m.Season, _ = strconv.Atoi(sw[1])

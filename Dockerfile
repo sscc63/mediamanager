@@ -3,6 +3,10 @@
 # 第一阶段：编译（alpine 镜像自带 Go 工具链；CGO_ENABLED=0 纯静态，无 glibc 依赖）
 FROM golang:1.27-alpine AS builder
 WORKDIR /src
+# GOPROXY 必须换国内源：默认 proxy.golang.org 在国内不可达，会报
+# "tls: bad record MAC"（数据被中间设备改坏，不是缺依赖）。多家备选，任一可用即可。
+ENV GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+ENV GOSUMDB=sum.golang.google.cn
 # 先拷贝依赖清单，命中缓存可跳过 go mod download
 COPY go.mod go.sum ./
 RUN go mod download

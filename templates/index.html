@@ -496,6 +496,9 @@
             margin-bottom: 20px;
         }
         .cards-row .card { margin-bottom: 0; padding-bottom: 12px; }
+        /* 等宽两列：用于内容量相当的两张卡片（如 AI 大模型 + LitePan OAuth）。
+           移动端降单列由 @media 内同优先级的 .cards-row 规则负责（靠源码顺序覆盖）。 */
+        .cards-row-equal { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
         /* grid 项允许压缩，避免内容最小宽度把卡片撑出视口 */
         .cards-row > .card { min-width: 0; }
         .cards-row .card-title { margin-bottom: 8px; }
@@ -1492,6 +1495,8 @@
                 z-index: 6;
             }
             .cards-row { grid-template-columns: minmax(0, 1fr); }
+            /* 必须显式覆盖：.cards-row-equal 写在 @media 之后，否则整个规则被它压掉、手机上仍强制两列 */
+            .cards-row-equal { grid-template-columns: minmax(0, 1fr); }
             .sys-combo-card .emby-media-card { padding: 16px 16px 12px; }
             .sys-combo-card .mem-card { padding: 16px 16px 8px; }
             #tab-bg > .cards-row,
@@ -2259,23 +2264,34 @@
                     <div id="env-section-用户配置"></div>
                 </div>
 
-                <div class="card">
-                    <div class="card-title">
-                        LitePan OAuth 认证
+                <!-- AI 大模型与 LitePan OAuth 并排：两者内容量相当，等宽两列 -->
+                <div class="cards-row cards-row-equal">
+                    <div class="card">
+                        <div class="card-title">
+                            AI 大模型
+                            <span class="hint" id="ai-title-toggle"></span>
+                        </div>
+                        <div id="env-section-ai"></div>
                     </div>
-                    <div id="oauth-status-container"><div class="oauth-banner err">
-                    <div class="oauth-icon"><i class="fas fa-times-circle"></i></div>
-                    <div class="oauth-text">
-                        <div class="title">读取状态失败</div>
-                        <div class="meta">Failed to fetch</div>
-                    </div>
-                </div></div>
-                    <div class="info-callout">
-                        <div class="ic-title"><i class="fas fa-info-circle"></i>认证说明</div>
-                        OAuth 认证用于 115 网盘分享秒传至 123 云盘，认证需通过 Telegram 触发：<br>
-                        1. 向您的 TG Bot 发送 <code>/oauth</code> 命令<br>
-                        2. 点击 Bot 返回的链接，在网页完成 授权<br>
-                        3. 授权成功后 Token 会自动保存，状态会在刷新页面后更新
+
+                    <div class="card">
+                        <div class="card-title">
+                            LitePan OAuth 认证
+                        </div>
+                        <div id="oauth-status-container"><div class="oauth-banner err">
+                        <div class="oauth-icon"><i class="fas fa-times-circle"></i></div>
+                        <div class="oauth-text">
+                            <div class="title">读取状态失败</div>
+                            <div class="meta">Failed to fetch</div>
+                        </div>
+                    </div></div>
+                        <div class="info-callout">
+                            <div class="ic-title"><i class="fas fa-info-circle"></i>认证说明</div>
+                            OAuth 认证用于 115 网盘分享秒传至 123 云盘，认证需通过 Telegram 触发：<br>
+                            1. 向您的 TG Bot 发送 <code>/oauth</code> 命令<br>
+                            2. 点击 Bot 返回的链接，在网页完成 授权<br>
+                            3. 授权成功后 Token 会自动保存，状态会在刷新页面后更新
+                        </div>
                     </div>
                 </div>
             </section>
@@ -2593,8 +2609,9 @@
     <script>
         // ============ 全局状态 ============
         let envData = { sections: {} };
-        const BOOLEAN_KEYS = new Set(['ENV_AUTHORIZATION', 'ENV_AUTO_MAKE_JSON', 'ENV_MAKE_NEW_LINK']);
-        const SECRET_PATTERNS = /SECRET|TOKEN|PASSWORD|COOKIE/i;
+        const BOOLEAN_KEYS = new Set(['ENV_AUTHORIZATION', 'ENV_AUTO_MAKE_JSON', 'ENV_MAKE_NEW_LINK', 'ENV_AI_ENABLED']);
+        // 密钥类渲染为密码框；API_KEY 纳入后 ENV_AI_API_KEY / ENV_TMDB_API_KEY 一并掩码
+        const SECRET_PATTERNS = /SECRET|TOKEN|PASSWORD|COOKIE|API_KEY/i;
         const MERGE_PID_KEYS = [
             'ENV_123_LINK_UPLOAD_PID',
             'ENV_123_KUAKE_UPLOAD_PID',
@@ -4397,6 +4414,7 @@
         // 注意：分组的 key 必须属于当前章节（templete.env 里 `# 章节名` 那一行），否则 itemMap 找不到它 → 卡片整个不渲染（配置项凭空消失）
         const ENV_GROUPS = {
             '用户配置': [
+                { title: 'AI 大模型', keys: ['ENV_AI_ENABLED', 'ENV_AI_API_KEY', 'ENV_AI_BASE_URL', 'ENV_AI_MODEL', 'ENV_AI_DAILY_QUOTA'], separate: 'env-section-ai', rightToggle: 'ENV_AI_ENABLED' },
                 { title: '123 账号与密码', keys: ['ENV_123_CLIENT_ID', 'ENV_123_CLIENT_SECRET'], single: true },
                 { title: 'Telegram 通知', keys: ['ENV_TG_BOT_TOKEN', 'ENV_TG_ADMIN_USER_ID'], single: true },
                 { title: '影视资源（详情页「资源」解锁用）', keys: ['ENV_PANFX_COOKIE', 'ENV_PANFX_AUTO_REPLY', 'ENV_PANFX_REPLY_GAP'], single: true },
@@ -4429,10 +4447,10 @@
 
         function _switchHtml(m, sectionName, item) {
             const on = item.value === '1';
+            // 开关本身已表达状态，不再渲染「已开启/已关闭」文字
             return `<label class="switch">
                 <input type="checkbox" data-section="${sectionName}" data-key="${m.safeKey}" data-comment="${m.safeComment}" ${on ? 'checked' : ''}>
                 <span class="switch-track"><span class="switch-thumb"></span></span>
-                <span class="switch-label switch-state">${on ? '已开启' : '已关闭'}</span>
             </label>`;
         }
 
@@ -4517,7 +4535,6 @@
                 headRight = `<label class="switch">
                     <input type="checkbox" data-section="${sectionName}" data-key="${group.rightToggle}" data-comment="${(rt.comment || '').replace(/"/g, '&quot;')}" ${checked}>
                     <span class="switch-track"><span class="switch-thumb"></span></span>
-                    <span class="switch-label switch-state">${rt.value === '1' ? '已开启' : '已关闭'}</span>
                 </label>`;
             }
 
@@ -4534,6 +4551,10 @@
         // ============ Env 配置渲染 ============
         function renderEnvSection(sectionName, containerId) {
             const container = document.getElementById(containerId);
+            // 分离组（separate 指定了独立容器）渲染到自己的卡片，不混进当前容器
+            const separateGroups = (ENV_GROUPS[sectionName] || []).filter(g => g.separate);
+            renderSeparateGroups(sectionName, separateGroups);
+
             const items = (envData.sections[sectionName] || []).filter(i => !HIDDEN_KEYS.has(i.key));
             if (items.length === 0) {
                 container.innerHTML = '<div style="color: var(--text-400); padding: 20px; text-align: center;">无配置项</div>';
@@ -4545,6 +4566,7 @@
             let cards = '';
 
             (ENV_GROUPS[sectionName] || []).forEach(group => {
+                if (group.separate) { group.keys.forEach(k => usedKeys.add(k)); return; }
                 const groupKeys = [...group.keys];
                 if (group.rightToggle) groupKeys.push(group.rightToggle);
                 if (group.mergePid) groupKeys.push(...MERGE_PID_KEYS);
@@ -4559,11 +4581,32 @@
             });
 
             container.innerHTML = `<div class="cfg-grid">${cards}</div>`;
-            container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                cb.addEventListener('change', function() {
-                    const span = this.parentElement.querySelector('.switch-state');
-                    if (span) span.textContent = this.checked ? '已开启' : '已关闭';
+        }
+
+        // 渲染到独立卡片的配置组（如 AI 大模型）
+        function renderSeparateGroups(sectionName, groups) {
+            const items = (envData.sections[sectionName] || []).filter(i => !HIDDEN_KEYS.has(i.key));
+            const itemMap = {};
+            items.forEach(i => { itemMap[i.key] = i; });
+            groups.forEach(group => {
+                const target = document.getElementById(group.separate);
+                if (!target) return;
+                // rightToggle：把该开关提到卡片标题行最右（target 的父级 .card 内的 #ai-title-toggle），
+                // 不再占用正文位置。与 renderGroupCard 的 rightToggle 语义一致。
+                const toggles = group.rightToggle ? [].concat(group.rightToggle) : [];
+                toggles.forEach(key => {
+                    const it = itemMap[key];
+                    const holder = target.parentElement && target.parentElement.querySelector('[id$="-title-toggle"]');
+                    if (!it || !holder) return;
+                    // 标题行空间有限，不渲染「已开启/已关闭」文字（开关自身状态即够）
+                    holder.innerHTML = `<label class="switch" style="display:inline-flex;">
+                        <input type="checkbox" data-section="${sectionName}" data-key="${key}" data-comment="${(it.comment || '').replace(/"/g, '&quot;')}" ${it.value === '1' ? 'checked' : ''}>
+                        <span class="switch-track"><span class="switch-thumb"></span></span>
+                    </label>`;
                 });
+                const keys = group.keys.filter(k => itemMap[k] && !toggles.includes(k));
+                const cards = keys.map(k => renderGroupField(itemMap[k], sectionName, group)).join('');
+                target.innerHTML = `<div class="cfg-grid">${cards}</div>`;
             });
         }
 
@@ -4706,10 +4749,11 @@
             const payload = {};
             ['用户配置', '资源转存'].forEach(section => {
                 payload[section] = [];
-                // 资源转存为静态表单：开关在卡片标题区、字段在容器内，需以整个 Tab 为查询范围
+                // 查询范围必须是整个 Tab：开关可能渲染在卡片标题行（rightToggle），
+                // 不在字段容器内。只查容器会静默丢掉这些开关的值。
                 const scope = section === '资源转存'
                     ? document.querySelector('#tab-transfer-save')
-                    : document.getElementById(`env-section-${section}`);
+                    : document.querySelector('#tab-user');
                 if (!scope) return;
                 scope.querySelectorAll(`input[data-section="${section}"]`).forEach(input => {
                     let value = input.value;

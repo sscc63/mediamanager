@@ -84,6 +84,8 @@ type TransferExecutor struct {
 	CatHelper *CategoryHelper
 	History   *TransferHistory
 	Scraper   *Scraper
+	// AI TMDB 识别失败时的标题清洗兜底；nil 表示未启用（行为与改动前一致）
+	AI *AIClient
 
 	MovieFormat         string
 	TVFormat            string
@@ -125,6 +127,7 @@ type ExecutorConfig struct {
 	EnableScrape        bool
 	PriorityVersions    map[string]bool
 	SizeOverrideRatio   float64
+	AIConfig            AIConfig
 }
 
 // NewTransferExecutor 创建整理执行器。
@@ -160,6 +163,11 @@ func NewTransferExecutor(cfg ExecutorConfig) (*TransferExecutor, error) {
 	e.SizeOverrideRatio = cfg.SizeOverrideRatio
 	if e.SizeOverrideRatio <= 1 {
 		e.SizeOverrideRatio = 0
+	}
+
+	e.AI = NewAIClient(cfg.AIConfig)
+	if e.AI != nil {
+		log.Printf("AI 标题清洗已启用（模型 %s，每日上限 %d 次）", e.AI.Model, e.AI.Quota)
 	}
 
 	if cfg.TMDBAPIKey != "" {
@@ -435,6 +443,40 @@ func (e *TransferExecutor) TransferFile(ctx context.Context, fileID, fileName st
 				meta.Type = media.Type
 			}
 			media.Category = e.CatHelper.Match(media)
+		}
+	}
+
+	// 5.5 AI 兜底：TMDB 全链路失败时，让 AI 把脏标题还原成正式名称，再用它回搜 TMDB。
+	// AI 只改搜索词，命中后完全走原链路（海报/NFO/分类照旧）；回搜仍失败就照旧落「未分类」。
+	if media == nil && e.AI != nil && e.TMDB != nil {
+		parentDir := ""
+		if len(parentDirs) > 0 {
+			parentDir = parentDirs[0]
+		}
+		searchType := meta.Type
+		if searchType == "" {
+			searchType = "movie"
+		}
+		key := aiCacheKey(meta, parentDir)
+		if r := e.AI.Recognize(key, meta.Name, parentDir, meta.Year); r != nil && r.Valid {
+			year := r.Year
+			if year == 0 {
+				year = meta.Year
+			}
+			if m := e.TMDB.Search(r.Title, year, searchType); m != nil {
+				media = m
+				meta.Name = r.Title
+				if meta.Year == 0 && r.Year > 0 {
+					meta.Year = r.Year
+				}
+				if meta.Type == "" {
+					meta.Type = m.Type
+				}
+				media.Category = e.CatHelper.Match(media)
+				log.Printf("AI 标题回搜命中: '%s' -> '%s' -> '%s' (id=%d)", fileName, r.Title, m.Title, m.TMDBID)
+			} else {
+				log.Printf("AI 标题回搜 TMDB 仍无结果: '%s' -> '%s'", fileName, r.Title)
+			}
 		}
 	}
 

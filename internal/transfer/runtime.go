@@ -132,6 +132,13 @@ func InitFromEnv(client *pan123.Client, cfg *config.Config) bool {
 		EnableScrape:        enableScrape,
 		PriorityVersions:    priorityVersions,
 		SizeOverrideRatio:   sizeOverrideRatio,
+		AIConfig: AIConfig{
+			Enabled:    cfg.GetBool("ENV_AI_ENABLED", false),
+			APIKey:     cfg.Get("ENV_AI_API_KEY", ""),
+			BaseURL:    cfg.Get("ENV_AI_BASE_URL", ""),
+			Model:      cfg.Get("ENV_AI_MODEL", ""),
+			DailyQuota: cfg.GetInt("ENV_AI_DAILY_QUOTA", aiDefaultQuota),
+		},
 	})
 	if err != nil {
 		log.Printf("整理执行器初始化失败: %v", err)
@@ -263,6 +270,37 @@ func ApplyConfig(data map[string]string) {
 			e.SizeOverrideRatio = 0
 		}
 	}
+
+	// AI 兜底配置热更新：涉及 ENV_AI_* 就整体重建客户端。
+	// 重建会重置缓存与配额 —— 换 key/模型后旧缓存已失效，重建比逐字段打补丁更安全。
+	if hasAnyKey(data, "ENV_AI_ENABLED", "ENV_AI_API_KEY", "ENV_AI_BASE_URL", "ENV_AI_MODEL", "ENV_AI_DAILY_QUOTA") {
+		enabled := data["ENV_AI_ENABLED"] == "1" || data["ENV_AI_ENABLED"] == "true"
+		quota := aiDefaultQuota
+		if n, err := strconv.Atoi(strings.TrimSpace(data["ENV_AI_DAILY_QUOTA"])); err == nil && n > 0 {
+			quota = n
+		}
+		e.AI = NewAIClient(AIConfig{
+			Enabled:    enabled,
+			APIKey:     data["ENV_AI_API_KEY"],
+			BaseURL:    data["ENV_AI_BASE_URL"],
+			Model:      data["ENV_AI_MODEL"],
+			DailyQuota: quota,
+		})
+		if e.AI != nil {
+			log.Printf("AI 标题清洗配置已更新（模型 %s，每日上限 %d 次）", e.AI.Model, e.AI.Quota)
+		} else {
+			log.Printf("AI 标题清洗已关闭")
+		}
+	}
+}
+
+func hasAnyKey(data map[string]string, keys ...string) bool {
+	for _, k := range keys {
+		if _, ok := data[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------- 转存后自动整理的并发控制 ----------

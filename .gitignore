@@ -10,6 +10,7 @@ _l.py
 # 本地编译/构建产物（锚定根目录，否则会误伤 cmd/mmbot/ 源码目录）
 /mmbot
 /mmbot_linux
+/_verify_*
 build_push_*.log
 *.xlsx
 ~$*
@@ -22,3 +23,6 @@ build_push_*.log
 
 # AI 协作工作目录（项目记忆与技能，不进镜像）
 /.workbuddy-ai/
+
+# 运行时用户配置（含 API Key / Cookie 等凭据，绝不提交）
+config/user.env
