@@ -69,8 +69,8 @@ func (c *Client) headers() map[string]string {
 		"user-agent":      QuarkUA,
 		"accept":          "application/json, text/plain, */*",
 		"accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
-		"referer":         "https://drive.quark.cn/",
-		"origin":          "https://drive.quark.cn",
+		"referer":         "https://pan.quark.cn/",
+		"origin":          "https://pan.quark.cn",
 	}
 	return h
 }
