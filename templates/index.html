@@ -204,61 +204,67 @@
         #topToolbar.mode-log .back-btn { display: inline-flex !important; }
         .log-nav-btn { display: none; }
         body:has(#tab-bg.active) .log-nav-btn { display: inline-flex; }
+        /* iOS 风格菜单：淡黑毛玻璃 + 白字 + 行分割线 + 右箭头 */
         .drawer {
             position: fixed;
             top: calc(60px + env(safe-area-inset-top));
             left: 12px;
             z-index: 200;
-            width: 220px;
+            width: 232px;
             max-height: calc(100dvh - 88px);
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.6);
-            -webkit-backdrop-filter: blur(24px) saturate(140%);
-            backdrop-filter: blur(24px) saturate(140%);
-            border: 1px solid rgba(0, 0, 0, 0.06);
-            border-radius: 16px;
-            box-shadow:
-                0 1px 2px rgba(0, 0, 0, 0.05),
-                0 8px 28px -4px rgba(0, 0, 0, 0.10),
-                0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-            transform: translateY(-10px) scaleY(0.9);
-            transform-origin: top;
+            background: rgba(20, 20, 24, 0.72);
+            -webkit-backdrop-filter: blur(28px) saturate(180%);
+            backdrop-filter: blur(28px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            border-radius: 14px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 12px 36px -6px rgba(0, 0, 0, 0.50);
+            transform: translateY(-10px) scale(0.96);
+            transform-origin: top left;
             opacity: 0;
             visibility: hidden;
-            transition: transform 0.2s cubic-bezier(0.16, 0.68, 0.22, 1), opacity 0.2s ease, visibility 0.2s;
+            transition: transform 0.22s cubic-bezier(0.16, 0.68, 0.22, 1), opacity 0.2s ease, visibility 0.2s;
         }
         .drawer.open {
-            transform: translateY(0) scaleY(1);
+            transform: translateY(0) scale(1);
             opacity: 1;
             visibility: visible;
         }
         .nav-item {
             display: flex;
             align-items: center;
-            gap: 9px;
-            padding: 10px 14px;
-            color: var(--text-700);
+            padding: 13px 14px;
+            color: #fff;
             text-decoration: none;
-            font-size: 14px;
-            font-weight: 500;
+            font-size: 15px;
             letter-spacing: 0.02em;
-            border-radius: var(--radius-sm);
-            transition: color 0.18s ease, transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+            transition: background 0.16s ease;
             cursor: pointer;
-            position: relative;
+            -webkit-tap-highlight-color: transparent;
         }
-        .nav-item:hover { color: var(--text-800); transform: translateX(3px); }
-        .nav-item.active { color: var(--primary-hover); font-weight: 500; background: transparent; }
-        .drawer-sep {
-            height: 1px;
-            margin: 6px 14px;
-            background: linear-gradient(90deg, transparent, var(--border) 18%, var(--border) 82%, transparent);
+        /* 通栏分割线：border 随整行满宽，不缩进 */
+        .nav-item + .nav-item { border-top: 1px solid rgba(255, 255, 255, 0.13); }
+        .nav-item:hover { background: rgba(255, 255, 255, 0.07); }
+        .nav-item:active { background: rgba(255, 255, 255, 0.13); }
+        .nav-item.active { font-weight: 500; background: rgba(255, 255, 255, 0.14); }
+        /* 右箭头：CSS 双边框旋转 45° */
+        .nav-item::after {
+            content: '';
+            flex-shrink: 0;
+            width: 7px;
+            height: 7px;
+            margin-left: auto;
+            border-right: 1.6px solid rgba(255, 255, 255, 0.38);
+            border-bottom: 1.6px solid rgba(255, 255, 255, 0.38);
+            transform: rotate(-45deg);
         }
-        .nav-item.nav-danger { color: rgba(220, 38, 38, 0.72); }
-        .nav-item.nav-danger:hover { color: #B91C1C; }
+        .nav-item.nav-danger { color: #FF6B6B; }
+        .nav-item.nav-danger:hover { background: rgba(255, 69, 58, 0.16); }
+        /* 危险项：图标替掉右箭头 */
+        .nav-item.nav-danger::after { content: none; }
+        .nav-item.nav-danger i { margin-left: auto; font-size: 14px; }
 
         .content {
             flex: 1;
@@ -2070,9 +2076,9 @@
             <a class="nav-item" data-tab="mediawarp" onclick="switchTab('mediawarp')">
                 <span>Emby反代</span>
             </a>
-            <div class="drawer-sep"></div>
             <a class="nav-item nav-danger" onclick="restartSystem()">
-        <span>重启系统</span>
+                <span>重启系统</span>
+                <i class="fas fa-power-off"></i>
             </a>
         </aside>
 
