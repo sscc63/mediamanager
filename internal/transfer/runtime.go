@@ -287,7 +287,7 @@ func ApplyConfig(data map[string]string) {
 			DailyQuota: quota,
 		})
 		if e.AI != nil {
-			log.Printf("AI 标题清洗配置已更新（模型 %s，每日上限 %d 次）", e.AI.Model, e.AI.Quota)
+			log.Printf("✅ AI 标题清洗配置已更新（模型 %s，每日上限 %d 次）", e.AI.Model, e.AI.Quota)
 		} else {
 			log.Printf("AI 标题清洗已关闭")
 		}

@@ -417,8 +417,12 @@ func (e *TransferExecutor) TransferFile(ctx context.Context, fileID, fileName st
 			media = search(meta.Name, meta.Year, meta.TMDBID)
 			// 父目录名重试：文件名 TMDB 搜索失败时，复用 Recognize 的父目录识别再搜（电影/剧集通用）
 			if media == nil && len(parentDirs) > 0 {
-				parent := Recognize("", mtype, parentDirs)
+				parent := Recognize("", "", parentDirs)
 				if parent.Name != "" {
+					// 父目录已判出类型时同步搜索维度，否则会沿用文件名误判的 movie。
+					if parent.Type != "" {
+						mtype = parent.Type
+					}
 					// 优先用文件自身的年份搜索，避免同类不同年份撞名错配（如 1978 老版 vs 2020 重制）
 					year := parent.Year
 					if meta.Year > 0 {
@@ -430,10 +434,11 @@ func (e *TransferExecutor) TransferFile(ctx context.Context, fileID, fileName st
 						if meta.Year == 0 {
 							meta.Year = parent.Year
 						}
-						if meta.Type == "" {
+						// 同步类型：否则后续仍按 movie 走电影去重（同季多集共用一个 movie id 会被判劣版删除）。
+						if m.Type != "" {
 							meta.Type = m.Type
 						}
-						log.Printf("父目录TMDB重试命中: '%s' -> '%s' (id=%d)", fileName, parent.Name, m.TMDBID)
+						log.Printf("父目录TMDB重试命中: '%s' -> '%s' (id=%d, type=%s)", fileName, parent.Name, m.TMDBID, meta.Type)
 					}
 				}
 			}

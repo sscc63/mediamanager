@@ -151,10 +151,14 @@ func (t *TmdbClient) Search(name string, year int, mtype string) *MediaInfo {
 			}
 		}
 	}
-	// 4. 第一个结果
+	// 4. 名称与年份均未命中：不取第一个结果。
+	// 此前的「兜底取 results[0]」会把「搜到了但都不像」当成「搜到了」——
+	// 中文名撞词时（如「挑情丑闻」命中《丑闻》）必然错配到热门片，
+	// 后续按错误 id 走去重，还会把同季其余剧集当劣版删除。
+	// 返回 nil 交给上层：父目录重试 → AI 兜底 → 识别失败留在原地。
 	if selected == nil {
-		selected = &results[0]
-		log.Printf("TMDB 取第一个结果: %s (id=%d)", rTitle(selected), selected.ID)
+		log.Printf("TMDB 名称年份均不匹配: %s (%d)", name, year)
+		return nil
 	}
 
 	if selected.ID == 0 {

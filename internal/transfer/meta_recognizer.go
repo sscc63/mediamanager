@@ -441,7 +441,9 @@ func Recognize(filename, expectedType string, parentDirs []string) MetaInfo {
 						meta.Episode, _ = strconv.Atoi(nm[1])
 					}
 				}
-				if meta.Episode > 0 {
+				// 有季号即剧集：dirSeason 从父目录提取到但此前只写入 meta.Season，
+				// 定类型却只看 Episode，导致「剧名 S01」这类纯季号目录被判成 movie。
+				if meta.Episode > 0 || meta.Season > 0 {
 					meta.Type = "tv"
 					if meta.Season == 0 {
 						meta.Season = 1
