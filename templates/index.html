@@ -265,6 +265,12 @@
         /* 危险项：图标替掉右箭头 */
         .nav-item.nav-danger::after { content: none; }
         .nav-item.nav-danger i { margin-left: auto; font-size: 14px; }
+        /* 手机端：菜单文字与图标 ×1.17 */
+        @media (max-width: 768px) {
+            .nav-item { font-size: 17.55px; }
+            .nav-item::after { width: 8.19px; height: 8.19px; border-width: 0 1.872px 1.872px 0; }
+            .nav-item.nav-danger i { font-size: 16.38px; }
+        }
 
         .content {
             flex: 1;
