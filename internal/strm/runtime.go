@@ -264,7 +264,7 @@ func (r *StrmRuntime) Config() map[string]string {
 func (r *StrmRuntime) Start() {
 	r.stopCh = make(chan struct{})
 	go r.timerLoop()
-	log.Printf("STRM 定时线程已启动")
+	log.Printf("✅ STRM 定时线程已启动")
 }
 
 // Stop 停止定时线程。
@@ -667,7 +667,7 @@ func InitFromEnv(client *pan123.Client, getEnv func(string) string) bool {
 	}
 	enabled := getEnv("ENV_STRM_ENABLED") == "1"
 	if !enabled {
-		log.Printf("STRM 功能未启用（ENV_STRM_ENABLED=0）")
+		log.Printf("🚫 STRM 功能未启用（ENV_STRM_ENABLED=0）")
 		SetRuntime(nil)
 		return false
 	}

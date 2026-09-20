@@ -60,7 +60,7 @@ func GetTransferScheduler() *TransferScheduler { return GetScheduler() }
 // InitFromEnv 从配置初始化整理引擎，返回是否初始化成功。
 func InitFromEnv(client *pan123.Client, cfg *config.Config) bool {
 	if !cfg.GetBool("ENV_TRANSFER_ENABLED", false) {
-		log.Printf("文件整理功能未启用（ENV_TRANSFER_ENABLED=0）")
+		log.Printf("🚫 文件整理功能未启用（ENV_TRANSFER_ENABLED=0）")
 		return false
 	}
 
@@ -289,7 +289,7 @@ func ApplyConfig(data map[string]string) {
 		if e.AI != nil {
 			log.Printf("✅ AI 标题清洗配置已更新（模型 %s，每日上限 %d 次）", e.AI.Model, e.AI.Quota)
 		} else {
-			log.Printf("AI 标题清洗已关闭")
+			log.Printf("🚫 AI 标题清洗已关闭")
 		}
 	}
 }

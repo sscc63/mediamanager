@@ -41,7 +41,7 @@ func NewTransferScheduler(executor *TransferExecutor, scanIntervalMin int) *Tran
 // Start 启动定时扫描（在后台 goroutine 中运行）。
 func (s *TransferScheduler) Start() {
 	if s.scanInterval <= 0 {
-		log.Printf("整理定时扫描未启用（scan_interval<=0）")
+		log.Printf("🚫 整理定时扫描未启用（scan_interval<=0）")
 		return
 	}
 	s.once = sync.Once{}
@@ -49,7 +49,7 @@ func (s *TransferScheduler) Start() {
 	s.stopCh = stop
 	go s.runLoop(stop)
 	s.setNextRun(time.Now().Add(s.scanInterval))
-	log.Printf("整理调度器已启动，每 %v 扫描一次", s.scanInterval)
+	log.Printf("✅ 整理调度器已启动，每 %v 扫描一次", s.scanInterval)
 }
 
 // Stop 停止定时扫描。
@@ -58,7 +58,7 @@ func (s *TransferScheduler) Stop() {
 		close(s.stopCh)
 		s.stopCh = nil
 	}
-	log.Printf("整理调度器已停止")
+	log.Printf("🛑 整理调度器已停止")
 }
 
 func (s *TransferScheduler) runLoop(stop <-chan struct{}) {

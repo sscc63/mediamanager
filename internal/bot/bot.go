@@ -241,7 +241,7 @@ func (b *Bot) pollLoop() {
 			if b.onStarted != nil {
 				b.onStarted()
 			}
-			log.Printf("[Bot] TG Bot 轮询已启动")
+			log.Printf("✅ [Bot] TG Bot 轮询已启动")
 			first = false
 		}
 

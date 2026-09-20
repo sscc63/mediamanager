@@ -86,7 +86,7 @@ var (
 	// 季集：S01E02 / s01e02e03 / S01E02-E03 / 1x02 / 第N集 / 第X季第N集 / 纯 E192
 	// 纯 E 形式（凡人修仙传.E192）在国产长番里很常见，缺它会导致 Episode=0 → 误判 movie。
 	// 新分支追加在末尾（组 11/12），不能插在中间，否则下面按 se[N] 下标取值的逻辑全部错位。
-	seasonEpisodeRe = regexp.MustCompile(`(?i)(?:^|[\s\.\-_\[(])([Ss])(\d{1,2})(?:\s*[Ee]\s*(\d{1,3}))?(?:([-—])\s*[Ee]\s*(\d{1,3}))?|(\d{1,2})[xX](\d{1,3})|第\s*(\d{1,2})\s*季\s*第\s*(\d{1,3})\s*集|第\s*(\d{1,3})\s*集|(?:^|[\s\.\-_\[(])[Ee]\s*(\d{1,3})(?:\s|\.|\-|_|\]|\)|$)`)
+	seasonEpisodeRe = regexp.MustCompile(`(?i)(?:^|[\s\.\-_\[(]?)([Ss])(\d{1,2})(?:\s*[Ee]\s*(\d{1,3}))?(?:([-—])\s*[Ee]\s*(\d{1,3}))?|(\d{1,2})[xX](\d{1,3})|第\s*(\d{1,2})\s*季\s*第\s*(\d{1,3})\s*集|第\s*(\d{1,3})\s*集|(?:^|[\s\.\-_\[(])[Ee]\s*(\d{1,3})(?:\s|\.|\-|_|\]|\)|$)`)
 	// Season 1 形式
 	seasonWordRe = regexp.MustCompile(`(?i)\bSeason\s+(\d{1,2})\b`)
 	// 年份：四位数年份
@@ -437,13 +437,14 @@ func Recognize(filename, expectedType string, parentDirs []string) MetaInfo {
 				}
 				if meta.Episode == 0 {
 					base := stripExt(filename)
-					if nm := regexp.MustCompile(`(\d+)`).FindStringSubmatch(base); nm != nil {
+					// 「第3集」优先取集号；否则退化为取串内首个数字（如裸文件名 3.mkv）。
+					if em := episodeNumberRe.FindStringSubmatch(base); em != nil {
+						meta.Episode, _ = strconv.Atoi(em[1])
+					} else if nm := regexp.MustCompile(`(\d+)`).FindStringSubmatch(base); nm != nil {
 						meta.Episode, _ = strconv.Atoi(nm[1])
 					}
 				}
-				// 有季号即剧集：dirSeason 从父目录提取到但此前只写入 meta.Season，
-				// 定类型却只看 Episode，导致「剧名 S01」这类纯季号目录被判成 movie。
-				if meta.Episode > 0 || meta.Season > 0 {
+				if meta.Episode > 0 {
 					meta.Type = "tv"
 					if meta.Season == 0 {
 						meta.Season = 1
@@ -471,12 +472,16 @@ func isAllDigits(s string) bool {
 	return true
 }
 
-// looksLikeEpisodeCode 判断字符串是否只是季集编号片段（如 S01E181、E181、S01），不是真正的标题。
-var episodeCodeRe = regexp.MustCompile(`(?i)^[Ss]?\d{1,3}[Ee]\d{1,3}$|^[Ee]\d{1,3}$|^[Ss]\d{1,3}$`)
+// looksLikeEpisodeCode 判断字符串是否只是季集编号片段（如 S01E181、E181、S01、第1集），不是真正的标题。
+// 「第N集」必须整串匹配到「集」结尾：《第一炉香》《第二十条》《第三人》等片名不以「集」结尾，不受影响。
+var episodeCodeRe = regexp.MustCompile(`(?i)^[Ss]?\d{1,3}[Ee]\d{1,3}$|^[Ee]\d{1,3}$|^[Ss]\d{1,3}$|^第\s*\d{1,4}\s*集$`)
 
 func looksLikeEpisodeCode(s string) bool {
 	return episodeCodeRe.MatchString(strings.TrimSpace(s))
 }
+
+// episodeNumberRe 从「第3集」形态中取集号，避免退化到 (\d+) 时误取季号等其他数字。
+var episodeNumberRe = regexp.MustCompile(`(?i)第\s*(\d{1,4})\s*集`)
 
 func itoa(n int) string {
 	return strconv.Itoa(n)

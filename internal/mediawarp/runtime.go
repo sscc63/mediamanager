@@ -718,7 +718,7 @@ func (r *Runtime) Stop() {
 	}
 	if pid > 0 && isProcessAlive(pid) {
 		killProcess(pid)
-		log.Printf("MediaWarp 已停止（PID %d）", pid)
+		log.Printf("🛑 MediaWarp 已停止（PID %d）", pid)
 		r.clearPID()
 	}
 	r.cmd = nil
@@ -869,7 +869,7 @@ func InitFromEnv(get func(string, string) string, dataDir string) bool {
 	}
 	enabled := get("ENV_MWARP_ENABLED", "0") == "1"
 	if !enabled {
-		log.Printf("MediaWarp 反代未启用（ENV_MWARP_ENABLED=0）")
+		log.Printf("🚫 MediaWarp 反代未启用（ENV_MWARP_ENABLED=0）")
 		SetRuntime(nil)
 		return false
 	}

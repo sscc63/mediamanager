@@ -167,7 +167,7 @@ func NewTransferExecutor(cfg ExecutorConfig) (*TransferExecutor, error) {
 
 	e.AI = NewAIClient(cfg.AIConfig)
 	if e.AI != nil {
-		log.Printf("AI 标题清洗已启用（模型 %s，每日上限 %d 次）", e.AI.Model, e.AI.Quota)
+		log.Printf("✅ AI 标题清洗已启用（模型 %s，每日上限 %d 次）", e.AI.Model, e.AI.Quota)
 	}
 
 	if cfg.TMDBAPIKey != "" {
@@ -177,7 +177,7 @@ func NewTransferExecutor(cfg ExecutorConfig) (*TransferExecutor, error) {
 			e.TMDB = nil
 		} else {
 			e.TMDB = tmdb
-			log.Printf("TMDB 客户端已初始化")
+			log.Printf("✅ TMDB 客户端已初始化")
 		}
 	} else {
 		log.Printf("未配置 TMDB API Key，将只用文件名识别")

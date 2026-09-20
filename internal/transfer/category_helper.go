@@ -68,7 +68,7 @@ func (h *CategoryHelper) load() {
 		}
 		h.rules[mtype] = rules
 	}
-	log.Printf("已加载分类规则: %s", h.YAMLPath)
+	log.Printf("✅ 已加载分类规则: %s", h.YAMLPath)
 }
 
 // Match 按 media.type 取 movie/tv 节，按 yaml 定义顺序匹配分类条件。
