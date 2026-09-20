@@ -472,21 +472,22 @@ func (b *Bot) handleGeneralMessage(msg *tgbotapi.Message) {
 		var failMessages []string
 		qc := quark.New(cookie)
 		for _, url := range kuakeURLs {
-			jsonData := qc.ExportShareInfo(url, cookie)
-			if jsonData != nil {
-				if files, ok := jsonData["files"].([]any); ok && len(files) > 0 {
-					s, f := b.saveJSONData(msg, jsonData, 0, nil, nil, "夸克")
-					successCount += s
-					failCount += f
-					b.triggerTransferAfterSave(b.env.GetInt("ENV_123_KUAKE_UPLOAD_PID", 0))
-				} else {
-					failCount++
-					failMessages = append(failMessages, url+": 夸克Cookie可能已失效或未获取到文件信息")
-				}
-			} else {
+			jsonData, err := qc.ExportShareInfo(url, cookie)
+			if err != nil {
 				failCount++
-				failMessages = append(failMessages, url+": 夸克Cookie可能已失效或未获取到文件信息")
+				failMessages = append(failMessages, url+": "+err.Error())
+				continue
 			}
+			files, ok := jsonData["files"].([]any)
+			if !ok || len(files) == 0 {
+				failCount++
+				failMessages = append(failMessages, url+": 未获取到文件信息")
+				continue
+			}
+			s, f := b.saveJSONData(msg, jsonData, 0, nil, nil, "夸克")
+			successCount += s
+			failCount += f
+			b.triggerTransferAfterSave(b.env.GetInt("ENV_123_KUAKE_UPLOAD_PID", 0))
 		}
 		_ = successCount
 		if failCount > 0 {

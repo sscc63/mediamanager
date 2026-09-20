@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -107,14 +108,14 @@ func (c *Client) ShareFileList(ctx context.Context, code, passcode, stoken, dirI
 		return nil, err
 	}
 	if status != 200 {
-		return nil, fmt.Errorf("夸克 share_file_list HTTP %d: %s", status, string(raw))
+		return nil, fmt.Errorf("夸克 获取文件列表失败: %s", quarkErrMsg(status, raw))
 	}
 	var resp ShareFileResp
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Code != 0 {
-		return &resp, fmt.Errorf("夸克 share_file_list code=%d msg=%s", resp.Code, resp.Message)
+		return &resp, fmt.Errorf("夸克 获取文件列表失败: %s", resp.Message)
 	}
 	return &resp, nil
 }
@@ -132,7 +133,7 @@ func (c *Client) GetShareInfo(ctx context.Context, shareID, password string) (st
 		return "", err
 	}
 	if status != 200 {
-		return "", fmt.Errorf("夸克 get_share_info HTTP %d: %s", status, string(raw))
+		return "", fmt.Errorf("夸克 获取分享信息失败: %s", quarkErrMsg(status, raw))
 	}
 	var resp struct {
 		Code int       `json:"code"`
@@ -143,7 +144,7 @@ func (c *Client) GetShareInfo(ctx context.Context, shareID, password string) (st
 		return "", err
 	}
 	if resp.Code != 0 {
-		return "", fmt.Errorf("夸克 get_share_info code=%d msg=%s", resp.Code, resp.Msg)
+		return "", fmt.Errorf("夸克 获取分享信息失败: %s", resp.Msg)
 	}
 	return resp.Data.Stoken, nil
 }
@@ -194,15 +195,14 @@ func (c *Client) createDownloadRequest(ctx context.Context, code, pwd, stoken st
 	if pwd != "" {
 		payload["passcode"] = pwd
 	}
-	params := map[string]string{"entry": "ft", "uc_param_str": ""}
+	params := baseParams()
 	h := c.headers()
-	h["referer"] = "https://fast.uc.cn/"
 	raw, status, err := c.http.PostJSON(ctx, "https://pc-api.uc.cn/1/clouddrive/file/download?"+encodeParams(params), h, payload)
 	if err != nil {
 		return nil, err
 	}
 	if status != 200 {
-		return nil, fmt.Errorf("夸克 download HTTP %d: %s", status, string(raw))
+		return nil, fmt.Errorf("夸克 获取下载信息失败: %s", quarkErrMsg(status, raw))
 	}
 	var resp map[string]any
 	if err := json.Unmarshal(raw, &resp); err != nil {
@@ -267,16 +267,22 @@ func (c *Client) BatchGetFileDownloadInfo(ctx context.Context, code, pwd, stoken
 }
 
 func encodeParams(m map[string]string) string {
-	first := true
-	var b []byte
-	for k, v := range m {
-		if !first {
-			b = append(b, '&')
-		}
-		first = false
-		b = append(b, k...)
-		b = append(b, '=')
-		b = append(b, v...)
+	v := url.Values{}
+	for k, val := range m {
+		v.Set(k, val)
 	}
-	return string(b)
+	return v.Encode()
+}
+
+// quarkErrMsg 从夸克错误响应里取出人类可读的一句，避免把整段 JSON 抛给用户。
+// 取不到就退回 HTTP 状态码。
+func quarkErrMsg(status int, raw []byte) string {
+	var r struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(raw, &r) == nil && r.Message != "" {
+		return fmt.Sprintf("%s (code=%d)", r.Message, r.Code)
+	}
+	return fmt.Sprintf("HTTP %d", status)
 }
