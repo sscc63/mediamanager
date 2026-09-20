@@ -13,8 +13,8 @@ import (
 	"mmbot/internal/httpx"
 )
 
-// QuarkUA 夸克浏览器 UA。
-const QuarkUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Edg/137.0.0.0"
+// QuarkUA 夸克客户端 UA（浏览器 UA 会被 file/download 拒绝，取不到 md5）。
+const QuarkUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0.4896.160 Electron/18.3.5.4-b478491100 Safari/537.36 Channel/pckk_other_ch"
 
 // Client 夸克网盘 SDK。
 type Client struct {
