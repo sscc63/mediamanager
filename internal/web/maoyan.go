@@ -1,7 +1,10 @@
 package web
 
-// 猫眼榜单 API（piaofang.maoyan.com 的两个公开接口，无需 Cookie/签名，只需 User-Agent）。
-// 榜单只取前 9 条，匹配 TMDB 拿到海报与评分后复用 TMDB 卡片渲染；
+// 首页「国产热门电视剧 / 国产热门电影」榜单 API。
+// 电影走猫眼公开票房接口（piaofang.maoyan.com，无需 Cookie/签名，只需 User-Agent）；
+// 电视剧猫眼专业版已上 csec JS 反爬（旧接口 /dashboard/webHeatData 403，新接口
+// /i/api/encrypt/dashboard/webHeatData 浏览器 200 但直连仍 403），改用豆瓣「国产剧」热度榜。
+// 榜单只取前 10 条，匹配 TMDB 拿到海报与评分后复用 TMDB 卡片渲染；
 // 订阅沿用 ENV_FILTER 关键词机制，不需要新代码。
 
 import (
@@ -10,7 +13,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,17 +26,17 @@ import (
 
 const (
 	maoyanBase = "https://piaofang.maoyan.com"
-	// 每个榜单只取前 9 条（电影票房接口会返回 94 条；电视剧热度接口本身只返回 10 条，最多取满 9）
-	maoyanListSize = 9
+	// 每个榜单只取前 10 条（猫眼电影票房接口会返回 94 条；豆瓣国产剧榜用 page_limit 直接限定）
+	maoyanListSize = 10
 	// 猫眼对空 UA 会拒绝；固定一个桌面 Chrome UA 即可，不需要随机列表
 	maoyanUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-	// maoyanMatchConcurrency 匹配 TMDB 的并发度。9 部片每部一次搜索，串行就是 9 个上游往返，
+	// maoyanMatchConcurrency 匹配 TMDB 的并发度。10 部片每部一次搜索，串行就是 10 个上游往返，
 	// 首屏冷启动要干等好几秒；并发 6 路把总等待压到 2 个往返。不再调高是因为 TMDB 有速率限制，
-	// 而任务总数本来就只有 9 个，6 路已经够铺满。
+	// 而任务总数本来就只有 10 个，6 路已经够铺满。
 	maoyanMatchConcurrency = 6
 )
 
-// maoyanHTTP 猫眼抓取共享客户端，与频道监控同规格（15s 超时 + 连接复用）。
+// maoyanHTTP 榜单抓取共享客户端（猫眼电影 / 豆瓣剧集），与频道监控同规格（15s 超时 + 连接复用）。
 var maoyanHTTP = httpx.New(15 * time.Second)
 
 var (
@@ -57,39 +62,41 @@ func maoyanGet(path string) ([]byte, error) {
 	return body, nil
 }
 
-// maoyanHeatTitles 取剧集热度榜片名。
-// seriesType=4 就是「电视剧 + 网络剧」的并集，接口已按热度降序排好且本身返回 10 条，
-// 因此合并/去重/排序全部不需要，一次请求即可。
-func maoyanHeatTitles() ([]string, error) {
-	body, err := maoyanGet("/dashboard/webHeatData?seriesType=4&platformType=&showDate=2")
-	if err != nil {
-		return nil, err
+// ---------- 剧集榜：豆瓣「国产剧」热度榜 ----------
+// 猫眼剧集榜（原 /dashboard/webHeatData）已被 WAF 403 拉黑，新接口上了 csec JS 反爬，
+// 直连拿不到，因此电视剧改用豆瓣。豆瓣该接口无需 Cookie/签名，返回 JSON。
+const doubanTVHeatURL = "https://movie.douban.com/j/search_subjects"
+
+// doubanHeatTitles 取豆瓣「国产剧」热度榜片名。
+// sort=recommend 是豆瓣自己的热度序，与猫眼网播热度榜重合度约 8/10，原样取前 maoyanListSize 条不过滤。
+func doubanHeatTitles() ([]string, error) {
+	q := url.Values{}
+	q.Set("type", "tv")
+	q.Set("tag", "国产剧")
+	q.Set("sort", "recommend")
+	q.Set("page_limit", strconv.Itoa(maoyanListSize))
+	q.Set("page_start", "0")
+	body, status, err := maoyanHTTP.Get(context.Background(), doubanTVHeatURL+"?"+q.Encode(),
+		map[string]string{"User-Agent": maoyanUA, "Referer": "https://movie.douban.com/tv/"})
+	if err != nil || status != 200 {
+		return nil, fmt.Errorf("HTTP %d: %v", status, err)
 	}
-	return parseMaoyanHeat(body)
+	return parseDoubanHeat(body)
 }
 
-func parseMaoyanHeat(body []byte) ([]string, error) {
+func parseDoubanHeat(body []byte) ([]string, error) {
 	var r struct {
-		Status   bool `json:"status"`
-		DataList struct {
-			List []struct {
-				SeriesInfo struct {
-					Name string `json:"name"`
-				} `json:"seriesInfo"`
-			} `json:"list"`
-		} `json:"dataList"`
+		Subjects []struct {
+			Title string `json:"title"`
+		} `json:"subjects"`
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("响应解析失败: %v", err)
 	}
-	// 剧集榜的失败信号是 HTTP 200 + status=false
-	if !r.Status {
-		return nil, fmt.Errorf("接口返回 status=false（参数失效或被拒绝）")
-	}
 	var out []string
-	for _, it := range r.DataList.List {
-		if n := strings.TrimSpace(it.SeriesInfo.Name); n != "" {
-			out = append(out, n)
+	for _, s := range r.Subjects {
+		if t := strings.TrimSpace(s.Title); t != "" {
+			out = append(out, t)
 		}
 		if len(out) >= maoyanListSize {
 			break
@@ -101,7 +108,7 @@ func parseMaoyanHeat(body []byte) ([]string, error) {
 	return out, nil
 }
 
-// maoyanBoxOfficeTitles 取电影票房榜片名（接口返回 94 条，只取前 9）。
+// maoyanBoxOfficeTitles 取电影票房榜片名（接口返回 94 条，只取前 10）。
 // 排序是猫眼自己的综合序，不是票房降序，原样截取不重排。
 func maoyanBoxOfficeTitles() ([]string, error) {
 	body, err := maoyanGet("/dashboard-ajax/movie")
@@ -157,7 +164,7 @@ func maoyanMatch(client *transfer.TmdbClient, name, mediaType string) transfer.T
 	item := transfer.TmdbListItem{Title: name, MediaType: mediaType}
 	results := client.SearchMedia(name, mediaType, 20)
 	if len(results) == 0 {
-		log.Printf("[猫眼] 未能为 '%s' 匹配到 TMDB 条目，保留原标题", name)
+		log.Printf("[榜单] 未能为 '%s' 匹配到 TMDB 条目，保留原标题", name)
 		return item
 	}
 	best := results[0]
@@ -183,6 +190,11 @@ func (s *Server) handleMaoyanRank(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "不支持的 view，可选 tv/movie"})
 		return
 	}
+	// source 只用于日志与错误提示：电影走猫眼，电视剧走豆瓣
+	source := "猫眼"
+	if view == "tv" {
+		source = "豆瓣"
+	}
 	if tmdbAPIKey() == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"configured": false,
@@ -206,7 +218,7 @@ func (s *Server) handleMaoyanRank(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, bad := maoyanFailCache.get(view); bad {
-		maoyanErr("猫眼榜单暂时不可用（5 分钟内不再重试），请稍后再试")
+		maoyanErr(source + "榜单暂时不可用（5 分钟内不再重试），请稍后再试")
 		return
 	}
 
@@ -227,19 +239,19 @@ func (s *Server) handleMaoyanRank(w http.ResponseWriter, r *http.Request) {
 	var names []string
 	var err error
 	if view == "tv" {
-		names, err = maoyanHeatTitles()
+		names, err = doubanHeatTitles()
 	} else {
 		names, err = maoyanBoxOfficeTitles()
 	}
 	if err != nil {
-		log.Printf("[猫眼] %s 榜单抓取失败: %v", view, err)
+		log.Printf("[%s] %s 榜单抓取失败: %v", source, view, err)
 		maoyanFailCache.set(view, true)
-		maoyanErr("猫眼榜单获取失败：" + err.Error())
+		maoyanErr(source + "榜单获取失败：" + err.Error())
 		return
 	}
 
-	// 猫眼的 view 取值（tv/movie）与 TMDB 的 media_type 同名，直接传。
-	// 固定并发池 + 按下标回填，顺序仍与猫眼榜单一致；maoyanMu 已经保证同时只有一个榜单在抓，
+	// 榜单 view 取值（tv/movie）与 TMDB 的 media_type 同名，直接传。
+	// 固定并发池 + 按下标回填，顺序仍与榜单一致；maoyanMu 已经保证同时只有一个榜单在抓，
 	// 所以这里并发只是同一请求内部的并发，不会放大上游压力。
 	items := make([]transfer.TmdbListItem, len(names))
 	var wg sync.WaitGroup
@@ -255,6 +267,6 @@ func (s *Server) handleMaoyanRank(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 	maoyanCache.set(view, items)
-	log.Printf("[猫眼] %s 榜单已获取并缓存 %d 条", view, len(items))
+	log.Printf("[%s] %s 榜单已获取并缓存 %d 条", source, view, len(items))
 	maoyanOK(items)
 }

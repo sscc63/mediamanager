@@ -2261,7 +2261,7 @@
                 <!-- 国产电视剧热度榜：与电影/电视剧趋势榜同款横滑海报条 -->
                 <div class="trend-rank">
                     <div class="trend-rank-head">
-                        <span class="trend-rank-name" onclick="gotoMaoyanTv()" role="button" title="查看猫眼电视剧榜单">国产热门电视剧 <i class="fa fa-chevron-right" style="font-size:13px;vertical-align:middle;"></i></span>
+                        <span class="trend-rank-name" onclick="gotoMaoyanTv()" role="button" title="查看国产电视剧热度榜">国产热门电视剧 <i class="fa fa-chevron-right" style="font-size:13px;vertical-align:middle;"></i></span>
                     </div>
                     <div class="trend-rank-track" id="trendRankTrackMaoyan"></div>
                 </div>
@@ -6050,7 +6050,7 @@
                         const maxSize = Math.max(...g.files.map(f => f.size || 0));
                         keepIdx = g.files.findIndex(f => (f.size || 0) === maxSize);
                     }
-                    html += `<details style="border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px;">
+                    html += `<details open style="border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px;">
                         <summary style="cursor: pointer; font-size: var(--fs-subtitle); font-weight: 500; line-height: 1.35;">${g.label} · ${g.files.length} 个文件 · 可释放 ${fmtSize(g.redundant_size)}</summary>
                         <table class="history-table" style="margin-top: 8px;">
                             <thead><tr><th style="width: 36px;"></th><th>名称</th><th>大小</th><th>版本信息</th><th>保留</th></tr></thead>
