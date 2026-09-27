@@ -207,8 +207,12 @@ func (h *TransferHistory) FindSameEpisode(tmdbID, season, episode int, mediaTitl
 		// tmdb_id 查不到，fallback title
 	}
 	if mediaTitle != "" {
+		// 只兜底「没有 tmdb_id 的旧记录」（catalog 写入的那类）。
+		// 若不过滤，同名不同作品会互相误撞：国漫《凡人修仙传》(106449) 的 E01 会匹配到
+		// 真人版《凡人修仙传》(243224) 的同集，旧版体积碾压 → 新文件被误移入回收站。
 		rows, err := h.db.Query(fmt.Sprintf(`SELECT %s FROM %s
 			WHERE media_title=? AND season=? AND episode=? AND status='success'
+			AND (tmdb_id IS NULL OR tmdb_id=0)
 			ORDER BY version DESC, file_size DESC`, historyColumns, historyTable), mediaTitle, season, episode)
 		if err != nil {
 			return nil
