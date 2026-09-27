@@ -1,5 +1,8 @@
 # 运行时数据（compose bind-mount 提供，不打进镜像，也避免密钥泄漏）
-config/
+# 例外：config/category.yaml 是程序自带的默认分类规则（用户手上没有这份文件），
+# 镜像必须带一份，否则容器里读不到规则 → 整理时分类目录整层丢失。
+config/*
+!config/category.yaml
 data/
 log/
 strm/

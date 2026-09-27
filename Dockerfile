@@ -43,6 +43,10 @@ COPY templates /app/templates
 RUN mkdir -p /app/config
 # 配置模板放在 /app/config 之外：宿主 ./config 挂载会遮蔽 /app/config，模板被遮就丢了
 COPY templete.env /app/templete.env
+# 默认分类规则同理：category.yaml 是程序自带的默认值（用户手上没有这份文件），
+# 放进 /app/config 会被挂载遮蔽 → 容器里永远读不到规则，整理时分类目录整层丢失。
+# 启动时若挂载卷里没有 category.yaml 才落盘（用户改过就绝不覆盖）。
+COPY config/category.yaml /app/category.default.yaml
 WORKDIR /app
 EXPOSE 8000
 # 首次启动（./config 为空挂载）时自动生成 user.env，保证"只有 docker-compose.yml 也能跑"；
@@ -50,4 +54,4 @@ EXPOSE 8000
 # 每次启动都把镜像内置模板同步到挂载卷的 templete.env：宿主 ./config 卷是持久的，
 # 若不回刷，/update 后磁盘上的模板还是旧版，导致 /api/env 返回的章节/key 落后于前端（如 PANFX 配置不显示）。
 # 只同步模板，user.env 绝不动（用户配置值都在那里）。
-CMD ["/bin/sh", "-c", "[ -f /app/config/user.env ] || cp /app/templete.env /app/config/user.env; cp /app/templete.env /app/config/templete.env; exec ./mmbot"]
+CMD ["/bin/sh", "-c", "[ -f /app/config/user.env ] || cp /app/templete.env /app/config/user.env; cp /app/templete.env /app/config/templete.env; [ -f /app/config/category.yaml ] || cp /app/category.default.yaml /app/config/category.yaml; exec ./mmbot"]
