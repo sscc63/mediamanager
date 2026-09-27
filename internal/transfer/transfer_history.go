@@ -239,8 +239,10 @@ func (h *TransferHistory) FindSameMovie(tmdbID int, mediaTitle, mediaYear string
 		// tmdb_id 查不到，fallback title
 	}
 	if mediaTitle != "" {
+		// 同 FindSameEpisode：只兜底「没有 tmdb_id 的旧记录」，避免同名不同作品（如同名电影与剧集）互相误撞
 		sqlStr := fmt.Sprintf(`SELECT %s FROM %s
-			WHERE media_title=? AND media_type='movie' AND status='success'`, historyColumns, historyTable)
+			WHERE media_title=? AND media_type='movie' AND status='success'
+			AND (tmdb_id IS NULL OR tmdb_id=0)`, historyColumns, historyTable)
 		args := []any{mediaTitle}
 		if mediaYear != "" {
 			sqlStr += " AND media_year=?"
