@@ -1565,9 +1565,8 @@
         }
         .tmdb-back:hover { color: var(--primary); }
         .tmdb-back i { font-size: 12px; }
-        /* 页内返回条在手机端隐藏：返回由顶部工具栏返回键承担（须置于基础规则之后，避免被覆盖） */
-        @media (max-width: 768px) { .tmdb-back { display: none; } }
-        @media (min-width: 769px) { #tab-tmdb .tmdb-back { display: none; } }
+        /* 两端一律隐藏（顶部工具栏返回键 / 左侧导航已承担）：须置于基础规则之后，避免被上面的 display 覆盖 */
+        .tmdb-back { display: none; }
         /* 整页卡片容器：与其他 Tab 页一致（半透明底由全局 .card 覆盖层统一给定） */
         .tmdb-page { min-height: 220px; }
         #tmdb-content { margin: 0; padding: 0 2px; }

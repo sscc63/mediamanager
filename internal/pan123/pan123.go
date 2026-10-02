@@ -95,10 +95,14 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("123API错误%d: %s", e.Code, e.Message)
 }
 
-// IsAuthError 判断是否为鉴权失败（401 或 token is expired）。
-func (e *APIError) IsAuthError() bool {
-	return e.Code == 401 || strings.Contains(strings.ToLower(e.Message), "token is expired")
+// isAuthMsg 判断是否为鉴权失败。
+func isAuthMsg(code int, msg string) bool {
+	s := strings.ToLower(msg)
+	return code == 401 || strings.Contains(s, "token is expired") || strings.Contains(s, "access token invalid")
 }
+
+// IsAuthError 判断鉴权失败。
+func (e *APIError) IsAuthError() bool { return isAuthMsg(e.Code, e.Message) }
 
 // Response 123 统一响应结构。
 type Response struct {
@@ -150,6 +154,9 @@ func (r *Response) MessageString() string {
 
 // IsSuccess 判断 123 接口是否成功（code=0 或 code=200 均视为成功）。
 func (r *Response) IsSuccess() bool { return r.Code == 0 || r.Code == 200 }
+
+// IsAuthError 判断鉴权失败。
+func (r *Response) IsAuthError() bool { return isAuthMsg(r.Code, r.MessageString()) }
 
 // ---------- 登录 ----------
 
@@ -309,7 +316,7 @@ func (c *Client) reqAuto(ctx context.Context, method, url string, headers map[st
 			}
 		}
 	}
-	if resp.Code == 401 || strings.Contains(strings.ToLower(resp.MessageString()), "token is expired") {
+	if resp.IsAuthError() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		// 优先使用 web 登录重试

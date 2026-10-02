@@ -301,20 +301,13 @@ func DeleteItems(ctx context.Context, client *pan123.Client, items []DeleteItem,
 					targetID = FindPanFileID(ctx, client, localPath, item.Size, mappings, dirIDCache, listingCache)
 				}
 				if targetID != 0 {
-					// 预检：文件是否在正常目录（非回收站）
-					detail, dErr := client.FSDetail(ctx, targetID)
-					if dErr != nil || detail == nil {
-						log.Printf("[delete] 网盘源文件不存在（已在回收站或已删除）: %s (file_id=%d)", name, targetID)
+					if ok, err := client.TrashFile(ctx, targetID); ok {
+						log.Printf("[delete] 已删除网盘源文件: file_id=%d（%s）", targetID, name)
+						deletedFileIDs = append(deletedFileIDs, int64ToString(targetID))
+					} else if err != nil {
+						log.Printf("[delete] 删除网盘源文件失败: %s, 原因: %v", name, err)
 					} else {
-						log.Printf("[delete] 网盘源文件存在，准备移入回收站: %s (file_id=%d, size=%d)", name, targetID, detail.Size)
-						if ok, err := client.TrashFile(ctx, targetID); ok {
-							log.Printf("[delete] 已删除网盘源文件: file_id=%d（%s）", targetID, name)
-							deletedFileIDs = append(deletedFileIDs, int64ToString(targetID))
-						} else if err != nil {
-							log.Printf("[delete] 删除网盘源文件失败: %s, 原因: %v", name, err)
-						} else {
-							log.Printf("[delete] 删除网盘源文件未生效（已手动删除/已在回收站/无效id）: %s", name)
-						}
+						log.Printf("[delete] 删除网盘源文件未生效（已手动删除/已在回收站/无效id）: %s", name)
 					}
 				} else {
 					log.Printf("[delete] 未定位到网盘源文件: %s", name)

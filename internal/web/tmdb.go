@@ -167,6 +167,15 @@ func tmdbClient() *transfer.TmdbClient {
 	return webTMDB
 }
 
+// aiClient 返回 AI 标题还原客户端，复用整理执行器上的实例（配额与缓存和整理链路共用）。
+// 整理功能未启用时执行器不存在，返回 nil，AI 兜底自动不生效。
+func aiClient() *transfer.AIClient {
+	if ex := transfer.GetTransferExecutor(); ex != nil {
+		return ex.AI
+	}
+	return nil
+}
+
 func embyClient() *strm.EmbyClient {
 	return strm.GetEmbyRuntime()
 }

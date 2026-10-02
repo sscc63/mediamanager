@@ -369,15 +369,16 @@ func (m *MessageDB) ListRecentWithTitle(hours int, limit int) []ChannelRecent {
 
 // UpdateTMDBColumns 把 TMDB 匹配结果写回对应频道消息，实现持久化（首次命中即固化，
 // 后续查询直接读库）。以 message_url 定位（与 IsProcessed 去重一致）。
-func (m *MessageDB) UpdateTMDBColumns(messageURL string, tmdbID int, posterPath string) {
+// media_type 必须与 tmdb_id 一起写：电影与剧集是两套 id 空间，只存 id 会配错详情。
+func (m *MessageDB) UpdateTMDBColumns(messageURL string, tmdbID int, posterPath, mediaType string) {
 	if m == nil || m.db == nil || messageURL == "" {
 		return
 	}
 	if tmdbID <= 0 {
 		return
 	}
-	_, err := m.db.Exec(`UPDATE messages SET tmdb_id = ?, poster_path = ? WHERE message_url = ?`,
-		tmdbID, posterPath, messageURL)
+	_, err := m.db.Exec(`UPDATE messages SET tmdb_id = ?, poster_path = ?, media_type = ? WHERE message_url = ?`,
+		tmdbID, posterPath, mediaType, messageURL)
 	if err != nil {
 		log.Printf("[监控] 写回 TMDB 映射失败: %v", err)
 	}

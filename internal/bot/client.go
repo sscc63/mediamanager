@@ -96,14 +96,19 @@ func getOAuthClient() *oauth.Client {
 }
 
 // initLitepanClient 用 Litepan OAuth token 创建独立的 P123Client（仅用于 115→123 SHA1秒传）。
-// token 不存在/已失效且无法自动刷新时返回 nil。
+// token 不存在、已失效或探活失败时返回 nil。
 func (b *Bot) initLitepanClient() *pan123.Client {
-	c, err := getOAuthClient().GetToken(context.Background())
-	if err != nil || c == "" {
+	token, err := getOAuthClient().GetToken(context.Background())
+	if err != nil || token == "" {
 		log.Printf("获取 Litepan token 失败: %v", err)
 		return nil
 	}
-	return pan123.New(c)
+	c := pan123.New(token)
+	if resp, err := c.UserInfo(context.Background()); err == nil && resp.IsAuthError() {
+		log.Printf("Litepan token 已被服务端拒绝，需重新授权")
+		return nil
+	}
+	return c
 }
 
 func trimSpace(s string) string {

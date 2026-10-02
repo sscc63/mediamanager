@@ -25,6 +25,10 @@ const channelRecentHours = 24
 // 但不能无限放大 —— 该接口每条都要打一次 TMDB 搜索补海报。
 const channelRecentMaxHours = 72
 
+// channelAIMaxPerRequest 单次请求最多做几次 AI 标题兜底。该接口是前端同步调用的，
+// 每条 AI 要 1~3 秒，不设上限会让首次刷新明显卡住；剩下的留给下次请求（已处理的走缓存）。
+const channelAIMaxPerRequest = 3
+
 // handleChannelRecent GET /api/monitor/recent?hours=24&limit=30
 // hours 默认 24（见 channelRecentHours），超过 channelRecentMaxHours 会被夹到上限。
 func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +49,7 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]map[string]any, 0, len(rows))
 	seen := map[string]bool{}
+	aiBudget := channelAIMaxPerRequest // 本次请求剩余的 AI 兜底次数
 	for _, c := range rows {
 		key := normTitle(c.Title) + "|" + strings.TrimSpace(c.Year) // 归一化标题+年份去重，保留最新一条
 		if key == "" || seen[key] {
@@ -63,11 +68,12 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 			"target_url":    c.TargetURL,
 		}
 		if client != nil {
-			if c.TmdbID > 0 {
+			// 只固化了 id 的老数据不能信：类型可能是空或频道自报的错值，要重搜补齐并写回。
+			if c.TmdbID > 0 && validMediaType(c.Type) {
 				// 库内已持久化：直接读回，不再实时搜索（首次命中时已固化）
 				item["tmdb_id"] = c.TmdbID
 				item["poster_path"] = c.PosterPath
-			} else if hit := channelSearchFirst(client, c.Title, c.Year, c.Type); hit != nil {
+			} else if hit := channelMatch(client, c, &aiBudget); hit != nil {
 				item["tmdb_id"] = hit.ID
 				item["poster_path"] = hit.PosterPath
 				// 一律采用命中结果自带的类型：tmdb_id 与类型必须配对，否则前端会拿
@@ -75,7 +81,11 @@ func (s *Server) handleChannelRecent(w http.ResponseWriter, r *http.Request) {
 				// 识别出的类型为空时 channelSearchFirst 是 movie+tv 都搜，命中很可能是剧集。
 				item["media_type"] = hit.MediaType
 				// 写回库实现持久化：下次直接读库，且 24h 清理整行删除即随之过期
-				msgDB.UpdateTMDBColumns(c.MessageURL, hit.ID, hit.PosterPath)
+				msgDB.UpdateTMDBColumns(c.MessageURL, hit.ID, hit.PosterPath, hit.MediaType)
+			} else if c.TmdbID > 0 {
+				// 重搜没命中：保留已有 id 与海报，不因类型缺失丢掉条目。
+				item["tmdb_id"] = c.TmdbID
+				item["poster_path"] = c.PosterPath
 			} else {
 				// 识别/匹配失败（找不到对应 TMDB 条目）：不返回，避免在前端展示无海报的「幽灵」占位。
 				// 这类记录堆积在 24h 窗口里只会让海报墙越拉越长且大多是识别错的标题。
@@ -107,6 +117,9 @@ func (s *Server) handleChannelTransfer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": ok})
 }
 
+// validMediaType 判断类型能否用于配 tmdb_id（频道自报的值可能为空或标错）。
+func validMediaType(t string) bool { return t == "movie" || t == "tv" }
+
 // intQuery 解析整型查询参数，非法或非正数时用默认值。
 func intQuery(r *http.Request, key string, def int) int {
 	v, err := strconv.Atoi(r.URL.Query().Get(key))
@@ -129,6 +142,33 @@ func normTitle(s string) string {
 // 直接搜中文会错配到含同字的无关作品，需人工映射后按其原名搜索。
 var channelAlias = map[string]string{
 	"流人": "Slow Horses",
+}
+
+// channelMatch 用识别出的标题搜 TMDB；搜不到时交给 AI 还原标题，再用还原名搜一次。
+// aiBudget 是本次请求剩余的 AI 兜底次数，实际发起调用才扣减。
+func channelMatch(client *transfer.TmdbClient, c bot.ChannelRecent, aiBudget *int) *transfer.TmdbListItem {
+	if hit := channelSearchFirst(client, c.Title, c.Year, c.Type); hit != nil {
+		return hit
+	}
+	if aiBudget == nil || *aiBudget <= 0 {
+		return nil
+	}
+	ai := aiClient()
+	if ai == nil {
+		return nil
+	}
+	*aiBudget--
+	year, _ := strconv.Atoi(c.Year)
+	// 缓存键用归一化标题：该接口已按「标题+年份」去重，同一标题只会调一次。
+	r := ai.Recognize("ch|"+normTitle(c.Title), c.Title, "", year)
+	if r == nil || !r.Valid || r.Title == "" {
+		return nil
+	}
+	y := c.Year
+	if r.Year > 0 {
+		y = strconv.Itoa(r.Year)
+	}
+	return channelSearchFirst(client, r.Title, y, c.Type)
 }
 
 // channelSearchFirst 用标题搜索 TMDB，最多 limit 条。
