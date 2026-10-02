@@ -164,6 +164,16 @@ func maoyanMatch(client *transfer.TmdbClient, name, mediaType string) transfer.T
 	item := transfer.TmdbListItem{Title: name, MediaType: mediaType}
 	results := client.SearchMedia(name, mediaType, 20)
 	if len(results) == 0 {
+		// 榜单片名常带「第八季」「（加码臻享版）」等后缀，直搜落空时交给 AI 还原标题再搜一次
+		if ai := aiClient(); ai != nil {
+			if r := ai.Recognize("rank|"+mediaType+"|"+name, name, "", 0); r != nil && r.Valid && r.Title != "" {
+				if results = client.SearchMedia(r.Title, mediaType, 20); len(results) > 0 {
+					log.Printf("[榜单] AI 标题回搜命中: '%s' -> '%s'", name, r.Title)
+				}
+			}
+		}
+	}
+	if len(results) == 0 {
 		log.Printf("[榜单] 未能为 '%s' 匹配到 TMDB 条目，保留原标题", name)
 		return item
 	}
