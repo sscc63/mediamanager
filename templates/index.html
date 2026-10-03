@@ -89,7 +89,7 @@
             opacity: .35;
             -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
             mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-            transition: opacity .16s ease;
+            transition: opacity .1s ease;
             transform: translateZ(0);
             will-change: opacity;
         }
@@ -184,6 +184,8 @@
             -webkit-tap-highlight-color: transparent;
             padding: 0;
         }
+        /* 后台按钮的描边服务器图标：FA Free 无 regular 版 fa-server（会回退成实心），故自绘 SVG 描边 */
+        .toolbar-icon-btn .srv-line { width: 1em; height: 1em; display: block; }
         .ham-bars { display: inline-flex; flex-direction: column; justify-content: center; gap: 5px; transition: transform .32s cubic-bezier(.4,0,.2,1); }
         .ham-bar { display: block; width: 22px; height: 2.2px; border-radius: 2px; background: currentColor;
                    transition: transform .32s cubic-bezier(.4,0,.2,1), opacity .18s ease, width .2s ease; }
@@ -748,8 +750,8 @@
             inset: 0;
             opacity: 0;
             pointer-events: none;
-            /* .45s 太长：旧图已淡出、新图未到的空窗近半秒；图已预解码时 .22s 足够顺滑 */
-            transition: opacity .22s ease;
+            /* .45s 太长（旧图已淡出、新图未到的空窗近半秒）；.15s 收尾更干脆——跟手段由 .dragging 摘掉过渡，不受此值影响 */
+            transition: opacity .15s ease;
         }
         #tab-system .entry-carousel .entry-card.active {
             opacity: 1;
@@ -2111,7 +2113,7 @@
                 <span class="toolbar-title" id="toolbarTitle"></span>
                 <!-- 后台（默认态）：服务器描边图标，点击进入后台任务页 -->
                 <button class="toolbar-icon-btn logs-btn mode-default-right" onclick="switchTab('bg')" aria-label="后台">
-                    <i class="fa-regular fa-server fa-fw"></i>
+                    <svg class="srv-line" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="8" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="2" y="13" width="20" height="8" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="6.2" cy="7" r="1.15" fill="currentColor"/><circle cx="6.2" cy="17" r="1.15" fill="currentColor"/></svg>
                 </button>
                 <!-- 保存（编辑态） -->
                 <button class="toolbar-icon-btn save-btn mode-edit-right" onclick="saveTopConfig()" aria-label="保存配置">
@@ -3965,7 +3967,7 @@
             if (_heroBgTimer) clearTimeout(_heroBgTimer);
             _heroBgTimer = setTimeout(() => {
                 requestAnimationFrame(() => document.body.classList.remove('hero-bg-changing'));
-            }, 60);
+            }, 40);
         }
         // 五点滑动窗口指示器：DOM 固定 N 个槽位，窗口随当前项滑动，两端用小点暗示窗口外还有。
         // 槽位复用而非每次重建，避免切换时整排重排导致动画抖动。
@@ -4034,7 +4036,7 @@
                 if (it) _preheat((window.innerWidth <= 768 && it._heroPosterUrl) || _entryImgSrc(it));
             });
         }
-        const ENTRY_SWIPE_DIST = 140;
+        const ENTRY_SWIPE_DIST = 110;
 
         function _entryCards() {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
