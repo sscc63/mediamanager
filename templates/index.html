@@ -13,8 +13,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        /* 根画布底色：html 默认白画布会在样式/海报底图就绪前透出，刷新首页时左上现白边，钉成深底消除 */
-        html { background-color: #0c0c10; }
         /* [hidden] 必须压过自带 display：作者样式（类选择器）优先级高于 UA，否则带 hidden 的 flex 容器仍占位、border 常态显示成一条线 */
         [hidden] { display: none !important; }
         :root {
@@ -3749,24 +3747,31 @@
         let _entryPosterItems = [];
         let _entryPosterAll = [];
         let _entryPosterIdx = 0;
-        let _entryPosterTimer = null;
         let _entryPosterTouch = null;
         let _heroBgTimer = null;
         let _heroBgCurrent = null;   // 已应用的 --hero-bg，同一张图不重复走淡出淡入
+        // 断点判据与 CSS @media(max-width:768px) 同源：innerWidth 含滚动条宽，会与媒体查询不一致
+        function _isMobile() { return matchMedia('(max-width: 768px)').matches; }
         function _entryImgSrc(i) {
             return `https://image.tmdb.org/t/p/w1280${i.backdrop_path || i.poster_path}`;
         }
-        // 大图预解码：先让浏览器拉完并解码再挂到 DOM，否则换图那 200~400ms 露出白底就是「闪白一下」
-        // decode() 返回 Promise 且不占主线程，失败/超时照常回调
-        const _heroPre = new Set();
+        // 大图预解码：解码完再挂 DOM，否则换图那 200~400ms 露白底 = 闪白。
+        // 按 url 存「是否就绪」而非「是否请求过」：后者二次调用会立刻回调，绕过等待 = 闪白
+        const _heroPre = new Map();   // url -> { done, cbs[] }
         function _preheat(url, done) {
             if (!url) { done && done(); return; }
-            if (_heroPre.has(url)) { done && done(); return; }
-            _heroPre.add(url);
-            if (_heroPre.size > 24) _heroPre.delete(_heroPre.values().next().value);
+            const hit = _heroPre.get(url);
+            if (hit) { hit.done ? (done && done()) : hit.cbs.push(done); return; }
+            const rec = { done: false, cbs: done ? [done] : [] };
+            _heroPre.set(url, rec);
+            if (_heroPre.size > 24) _heroPre.delete(_heroPre.keys().next().value);
+            const finish = () => {
+                if (rec.done) return;
+                rec.done = true;
+                const cbs = rec.cbs; rec.cbs = [];
+                cbs.forEach(c => c && c());
+            };
             const im = new Image();
-            let fired = false;
-            const finish = () => { if (!fired) { fired = true; done && done(); } };
             im.onload = () => { (im.decode ? im.decode().catch(() => {}) : Promise.resolve()).then(finish, finish); };
             im.onerror = finish;
             im.src = url;
@@ -3788,15 +3793,17 @@
         let _entryCardPool = new Map();
         let _entryCardVertical = null;   // 建卡时用的断点模式；跨过 768px 断点则整池作废重建
         function _entryCardKey(it) { return (it.media_type || 'movie') + ':' + it.id; }
+        // 弃卡前清 img.src：否则 2~8MB 大图的解码位图还压在内存里
+        function _dropEntryCard(c) {
+            const im = c && c.querySelector('img:not(.entry-brand)');
+            if (im) { im.onload = null; im.src = ''; }
+        }
         // 池子只保留当前在用的条目：每张卡挂着一个已解码大图，不设界会随榜单刷新越积越多
         function _pruneEntryCardPool(aliveItems) {
             const alive = new Set((aliveItems || _entryPosterItems.concat(_entryPosterAll)).map(_entryCardKey));
             for (const k of [..._entryCardPool.keys()]) {
                 if (!alive.has(k)) {
-                    // 驱逐前清空 img.src：否则那张 2~8MB 大图的解码位图还压在内存里不释放
-                    const c = _entryCardPool.get(k);
-                    const im = c && c.querySelector('img:not(.entry-brand)');
-                    if (im) { im.onload = null; im.src = ''; }
+                    _dropEntryCard(_entryCardPool.get(k));
                     _entryCardPool.delete(k);
                 }
             }
@@ -3806,7 +3813,7 @@
             const img = c.querySelector('img:not(.entry-brand)');
             if (!img) return;
             // 手机端首帧不带图，这里不动 src；注意别把「算不出图源」和「已经是对的图」混成同一分支，否则无字版会被去重挡掉
-            if (window.innerWidth <= 768) {
+            if (_isMobile()) {
                 const heroUrl = (it && it._heroPosterUrl) || '';
                 if (heroUrl && img.dataset.heroUrl !== heroUrl) {
                     img.dataset.heroUrl = heroUrl;
@@ -3821,8 +3828,13 @@
             }
         }
         function _entryCard(it) {
-            const vertical = window.innerWidth <= 768;
-            if (_entryCardVertical !== vertical) { _entryCardPool.clear(); _entryCardVertical = vertical; }
+            const vertical = _isMobile();
+            // 跨断点整池作废：逐张释放解码位图（clear() 会留大图等 GC）
+            if (_entryCardVertical !== vertical) {
+                _entryCardPool.forEach(_dropEntryCard);
+                _entryCardPool.clear();
+                _entryCardVertical = vertical;
+            }
             const key = _entryCardKey(it);
             const hit = _entryCardPool.get(key);
             // 卡上记着它属于哪一条：换图时先 _preheat 新图、解码完再写 src，避免空白帧
@@ -3879,14 +3891,13 @@
             _entryPosterIdx = 0;
             _updateEntryCarousel();
             _bindEntrySwipe(strip);
-            _restartEntryPoster();
         }
         // 徽标/无字海报路径按条目缓存 Promise，不缓存就每敲一个字符重拉 10 次详情接口
         function _loadEntryDetail(item, brand, posterImg, metaEl, overviewEl) {
             if (!item || !item.id || !brand) return;
             if (!item._logoReq) {
                 // textless=1 只在手机端带：无文字海报只给手机端入口海报用，带上它后端才会补这一次请求
-                const tl = window.innerWidth <= 768 ? '&textless=1' : '';
+                const tl = _isMobile() ? '&textless=1' : '';
                 item._logoReq = api(`/api/tmdb/detail?id=${encodeURIComponent(item.id)}&type=${encodeURIComponent(item.media_type || 'movie')}${tl}`)
                     .then(d => (d && d.detail ? {
                         logo: d.detail.logo_path || '',
@@ -3903,7 +3914,7 @@
                     brand.src = `https://image.tmdb.org/t/p/original${r.logo}`;
                     brand.hidden = false;
                 }
-                if (posterImg && posterImg.isConnected && window.innerWidth <= 768) {
+                if (posterImg && posterImg.isConnected && _isMobile()) {
                     const url = r.textless
                         ? `https://image.tmdb.org/t/p/original${r.textless}`
                         : `https://image.tmdb.org/t/p/original${item.poster_path || item.backdrop_path || ''}`;
@@ -3947,7 +3958,7 @@
             _ensureEntryDetail(_entryPosterIdx);
             _ensureEntryDetail(_entryPosterIdx + 1);   // 预取下一张，滑动时即时可见
             const item = _entryPosterItems[_entryPosterIdx];
-            if (item) _updateHeroBg((window.innerWidth <= 768 && item._heroPosterUrl) || _entryImgSrc(item));
+            if (item) _updateHeroBg((_isMobile() && item._heroPosterUrl) || _entryImgSrc(item));
         }
         let _heroBgSeq = 0;
         function _updateHeroBg(src) {
@@ -4012,7 +4023,6 @@
             if (!_entryPosterItems.length) return;
             _entryPosterIdx = (index + _entryPosterItems.length) % _entryPosterItems.length;
             _updateEntryCarousel();
-            _restartEntryPoster();
         }
         function openHeroEntryDetail() {
             const item = _entryPosterItems[_entryPosterIdx];
@@ -4026,16 +4036,12 @@
                 backdrop_path: item.backdrop_path || ''
             });
         }
-        function _stepEntryPoster(dir) {
-            if (!_entryPosterItems.length || _entryPosterItems.length === 1) return;
-            _setEntryPoster(_entryPosterIdx + dir);
-        }
         function _preheatNeighborEntry() {
             const n = _entryPosterItems.length;
             if (n < 2) return;
             [_entryPosterIdx + 1, _entryPosterIdx - 1].forEach(i => {
                 const it = _entryPosterItems[((i % n) + n) % n];
-                if (it) _preheat((window.innerWidth <= 768 && it._heroPosterUrl) || _entryImgSrc(it));
+                if (it) _preheat((_isMobile() && it._heroPosterUrl) || _entryImgSrc(it));
             });
         }
         const ENTRY_SWIPE_DIST = 110;
@@ -4063,7 +4069,7 @@
             car.classList.add('dragging');
             // 跟手时同步英雄底稿：目标卡的图若已预热过就直接用，避免文字先到、背景晚到
             const item = _entryPosterItems[to];
-            if (item) _updateHeroBg((window.innerWidth <= 768 && item._heroPosterUrl) || _entryImgSrc(item));
+            if (item) _updateHeroBg((_isMobile() && item._heroPosterUrl) || _entryImgSrc(item));
         }
 
         // 松手收尾必须在切换索引/类名之前调用：内联 opacity 优先级高于 .active 类，残留会把目标卡压成半透明
@@ -5110,12 +5116,6 @@
                 _heroSearchTimer = null;
                 heroSearchLive(kw);
             }, HERO_SEARCH_DEBOUNCE);
-        }
-        function _restartEntryPoster() {
-            if (_entryPosterTimer) clearTimeout(_entryPosterTimer);
-            _entryPosterTimer = _entryPosterItems.length > 1
-                ? setTimeout(() => _stepEntryPoster(1), 12 * 60 * 60 * 1000)
-                : null;
         }
         function heroSearchLive(kw) {
             // 直接调用（点空白清空 / 切作用域）要取消尚未触发的防抖，否则清空之后 160ms 旧关键词又被应用回来
