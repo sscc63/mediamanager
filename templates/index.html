@@ -184,8 +184,8 @@
             -webkit-tap-highlight-color: transparent;
             padding: 0;
         }
-        /* 后台按钮的描边服务器图标：FA Free 无 regular 版 fa-server（会回退成实心），故自绘 SVG 描边 */
-        .toolbar-icon-btn .srv-line { width: 1em; height: 1em; display: block; }
+        /* 工具栏自绘 SVG 图标统一尺寸：1em 跟随按钮 font-size(22px)，宽度与汉堡的 22px 杠对齐 */
+        .toolbar-icon-btn > svg { width: 1em; height: 1em; display: block; }
         .ham-bars { display: inline-flex; flex-direction: column; justify-content: center; gap: 5px; transition: transform .32s cubic-bezier(.4,0,.2,1); }
         .ham-bar { display: block; width: 22px; height: 2.2px; border-radius: 2px; background: currentColor;
                    transition: transform .32s cubic-bezier(.4,0,.2,1), opacity .18s ease, width .2s ease; }
@@ -2113,7 +2113,7 @@
                 <span class="toolbar-title" id="toolbarTitle"></span>
                 <!-- 后台（默认态）：服务器描边图标，点击进入后台任务页 -->
                 <button class="toolbar-icon-btn logs-btn mode-default-right" onclick="switchTab('bg')" aria-label="后台">
-                    <svg class="srv-line" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="8" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="2" y="13" width="20" height="8" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="6.2" cy="7" r="1.15" fill="currentColor"/><circle cx="6.2" cy="17" r="1.15" fill="currentColor"/></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.15" y="3.9" width="21.7" height="7.2" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="1.15" y="12.9" width="21.7" height="7.2" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="5.9" cy="7.5" r="1.15" fill="currentColor"/><circle cx="5.9" cy="16.5" r="1.15" fill="currentColor"/></svg>
                 </button>
                 <!-- 保存（编辑态） -->
                 <button class="toolbar-icon-btn save-btn mode-edit-right" onclick="saveTopConfig()" aria-label="保存配置">
@@ -2121,7 +2121,7 @@
                 </button>
                 <!-- 日志（仅后台页右侧显示）：从汉堡移除后，日志入口移到这里 -->
                 <button class="toolbar-icon-btn log-nav-btn" onclick="clearLogsFilter(); switchTab('logs')" aria-label="日志动态">
-                    <i class="fas fa-terminal"></i>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="1.45" cy="5.3" r="1.25" fill="currentColor"/><path d="M6.3 5.3h16.55" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="1.45" cy="12" r="1.25" fill="currentColor"/><path d="M6.3 12h16.55" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="1.45" cy="18.7" r="1.25" fill="currentColor"/><path d="M6.3 18.7h11.55" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
                 </button>
             </div>
             <!-- ============ 日志动态 ============ -->
