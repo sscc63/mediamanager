@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* 根画布底色：html 默认白画布会在样式/海报底图就绪前透出，刷新首页时左上现白边，钉成深底消除 */
+        html { background-color: #0c0c10; }
         /* [hidden] 必须压过自带 display：作者样式（类选择器）优先级高于 UA，否则带 hidden 的 flex 容器仍占位、border 常态显示成一条线 */
         [hidden] { display: none !important; }
         :root {
