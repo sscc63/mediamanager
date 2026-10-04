@@ -95,17 +95,9 @@
         }
         body.hero-bg-changing::before { opacity: 0; }
         /* 系统页激活时的沉浸式适配：@max768 与 @min769 两份相同，且两断点无缝覆盖全宽度 → 提为基础规则 */
-        body:has(#tab-system.active) .content { position: relative; z-index: 1; }
-        body:has(#tab-system.active) .toolbar-icon-btn { color: #fff; }
-        body:has(#tab-system.active) #topToolbar button { pointer-events: auto; }
-        @media (max-width: 768px) {
-            html, body {
-                touch-action: manipulation;
-            }
-            input, select, textarea {
-                font-size: 16px !important;
-            }
-        }
+        body[data-page="system"] .content { position: relative; z-index: 1; }
+        body[data-page="system"] .toolbar-icon-btn { color: #fff; }
+        body[data-page="system"] #topToolbar button { pointer-events: auto; }
         ::selection { background: rgba(99, 102, 241, 0.16); }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -205,13 +197,13 @@
         #topToolbar.mode-log .save-btn { display: none !important; }
         #topToolbar.mode-log .back-btn { display: inline-flex !important; }
         .log-nav-btn { display: none; }
-        body:has(#tab-bg.active) .log-nav-btn { display: inline-flex; }
+        body[data-page="bg"] .log-nav-btn { display: inline-flex; }
         /* 首页：左侧汉堡不显示，只留右侧后台服务器按钮（推右端） */
-        body:has(#tab-system.active) .hamburger-btn { display: none; }
-        body:has(#tab-system.active) .logs-btn { margin-left: auto; }
+        body[data-page="system"] .hamburger-btn { display: none; }
+        body[data-page="system"] .logs-btn { margin-left: auto; }
         /* 后台页：汉堡显示，并排到日志图标右侧（log-nav 贴右，汉堡在其后） */
-        body:has(#tab-bg.active) #topToolbar.mode-log .hamburger-btn { display: inline-flex !important; order: 1; }
-        body:has(#tab-bg.active) #topToolbar.mode-log .log-nav-btn { margin-left: auto; }
+        body[data-page="bg"] #topToolbar.mode-log .hamburger-btn { display: inline-flex !important; order: 1; }
+        body[data-page="bg"] #topToolbar.mode-log .log-nav-btn { margin-left: auto; }
         /* iOS 风格菜单：淡黑毛玻璃 + 白字 + 行分割线 + 右箭头 */
         .drawer {
             position: fixed;
@@ -274,12 +266,6 @@
         /* 危险项：图标替掉右箭头 */
         .nav-item.nav-danger::after { content: none; }
         .nav-item.nav-danger i { margin-left: auto; font-size: 14px; }
-        /* 手机端：菜单文字与图标 ×1.17 */
-        @media (max-width: 768px) {
-            .nav-item { font-size: 17.55px; }
-            .nav-item::after { width: 8.19px; height: 8.19px; border-width: 0 1.872px 1.872px 0; }
-            .nav-item.nav-danger i { font-size: 16.38px; }
-        }
 
         .content {
             flex: 1;
@@ -641,7 +627,10 @@
                 justify-content: space-between;
                 padding: 6px 4px 4px;
             }
-            body:has(#tab-system.active) .top-toolbar {
+            /* 必须用 #topToolbar：基础规则 #topToolbar{position:sticky} 特异性 [1,0,0]，
+               纯属性选择器 body[data-page] .top-toolbar 只有 [0,2,1]，id 列 0<1 会输掉。
+               （原 body:has(#tab-system.active) 因 :has() 继承参数特异性为 [1,3,1] 才胜出。） */
+            body[data-page="system"] #topToolbar {
                 position: absolute;
                 left: 0;
                 right: 0;
@@ -664,51 +653,19 @@
                 background: transparent;
             }
             #tab-system .entry-carousel { min-height: 100vh; }
-            body:has(#tab-system.active) #tab-system .hero-search,
-            body:has(#tab-system.active) #tab-system .sys-combo-card,
-            body:has(#tab-system.active) #tab-system #history-card {
-                position: absolute;
-                right: 27px;
-                width: calc(25% - 27px);
-                min-width: 300px;
-                box-sizing: border-box;
-                z-index: 8;
-                margin: 0;
-            }
-            body:has(#tab-system.active) #tab-system .hero-search {
-                top: calc(62px + env(safe-area-inset-top));
-            }
-            body:has(#tab-system.active) #tab-system .sys-combo-card {
-                top: calc(134px + env(safe-area-inset-top));
-                height: 175px;
-            }
-            body:has(#tab-system.active) #tab-system #history-card {
-                top: calc(334px + env(safe-area-inset-top));
-                bottom: 20px;
-                height: auto;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-            }
-            body:has(#tab-system.active) #tab-system #history-card .history-wrap {
-                flex: 1;
-                min-height: 0;
-                overflow-y: auto;
-            }
-            body:has(#tab-system.active) #tab-system .hero-search { z-index: 9; }
             /* 桌面端去侧栏：内容区占满全宽（系统页海报铺满需要，但其他 Tab 不能跟着拉成扁纸条） */
             .content { max-width: none; }
             /* 后台 Tab 单独限宽：4 张卡片不能跟着视口一起拉满，否则内部空旷比例失衡 */
-            body:has(#tab-bg.active) .content { max-width: 1200px; margin: 0 auto; }
-            body:has(#tab-bg.active) #tab-bg {
+            body[data-page="bg"] .content { max-width: 1200px; margin: 0 auto; }
+            body[data-page="bg"] #tab-bg {
                 display: grid;
                 grid-template-columns: 400px minmax(0, 1fr);
                 column-gap: 16px;
                 row-gap: 16px;
                 align-items: start;
             }
-            body:has(#tab-bg.active) #tab-bg > .hero-search { grid-column: 1 / -1; }
-            body:has(#tab-bg.active) #tab-bg > .bg-left-col {
+            body[data-page="bg"] #tab-bg > .hero-search { grid-column: 1 / -1; }
+            body[data-page="bg"] #tab-bg > .bg-left-col {
                 grid-column: 1;
                 grid-row: 2;
                 display: flex;
@@ -716,11 +673,11 @@
                 gap: 16px;
             }
             /* 整理历史独占右列第 2 行（不再跨行，跨行的高度分摊会牵连左列）。 */
-            body:has(#tab-bg.active) #tab-bg > #history-card { grid-column: 2; grid-row: 2; }
+            body[data-page="bg"] #tab-bg > #history-card { grid-column: 2; grid-row: 2; }
             /* grid 行/列间距统一由 gap 控制；清掉基础规则的 margin-bottom 避免叠加成 32px */
-            body:has(#tab-bg.active) #tab-bg > :not(:last-child),
-            body:has(#tab-bg.active) .bg-left-col > :not(:last-child) { margin-bottom: 0; }
-            body:has(#tab-bg.active) #tab-bg #bg-cards-row { grid-template-columns: minmax(0, 1fr); }
+            body[data-page="bg"] #tab-bg > :not(:last-child),
+            body[data-page="bg"] .bg-left-col > :not(:last-child) { margin-bottom: 0; }
+            body[data-page="bg"] #tab-bg #bg-cards-row { grid-template-columns: minmax(0, 1fr); }
         }
         #tab-system .tmdb-entry-card { display: flex; flex-direction: column; }  /* flex 阻止外边距折叠，保证卡高由海报撑起 */
         #tab-system .tmdb-entry-card.card {
@@ -1405,6 +1362,13 @@
         /* ============ Responsive ============ */
         @media (max-width: 768px) {
             .btn { padding: 0 14px; font-size: 13px; height: 36px; }
+            /* 原先的独立 @media 块（原 101 行）：触摸优化 + 输入框防 iOS 聚焦放大 */
+            html, body { touch-action: manipulation; }
+            input, select, textarea { font-size: 16px !important; }
+            /* 原先的独立 @media 块（原 278 行）：菜单文字与图标 ×1.17 */
+            .nav-item { font-size: 17.55px; }
+            .nav-item::after { width: 8.19px; height: 8.19px; border-width: 0 1.872px 1.872px 0; }
+            .nav-item.nav-danger i { font-size: 16.38px; }
             .top-toolbar {
                 position: sticky;
                 top: 0;
@@ -1415,7 +1379,8 @@
                 margin: 0 -16px 8px;                    /* 横向出血铺满屏宽，底边距留给首张卡片 */
                 padding: calc(env(safe-area-inset-top) + 6px) 16px 4px;
             }
-            body:has(#tab-system.active) .top-toolbar {
+            /* 同桌面端：基础规则 #topToolbar{sticky} 是 [1,0,0]，这里必须也带 id 才能覆盖 */
+            body[data-page="system"] #topToolbar {
                 position: absolute;
                 left: 0;
                 right: 0;
@@ -1549,6 +1514,13 @@
             .info-callout .ic-title { font-size: 14px; }
             .tmdb-title { font-size: 14px; }
             .tmdb-modal-title { font-size: 20px; }
+            /* 原先的独立 @media 块（原 1560 行）：详情页大图限高 */
+            .tmdb-detail-page .tmdb-modal-hero img { height: auto; max-height: 260px; object-fit: contain; }
+            /* 原先的独立 @media 块（原 1991 行）：TMDB 网格与海报 */
+            .tmdb-grid { gap: 8px; }
+            .tmdb-poster { margin: 0 0 2px; }
+            .tmdb-poster .tmdb-score { font-size: 11px; padding: 2px 8px; }  /* 手机端评分标签与右上角集数角标一致 */
+            .tmdb-modal-hero img { max-height: 260px; object-fit: contain; }
         }
 
         /* ============ TMDB 影视榜单 ============ */
@@ -1589,9 +1561,6 @@
         .tmdb-detail-page { padding: 0; overflow: hidden; }
         .tmdb-detail-page .tmdb-modal-hero { min-height: 0; }
         .tmdb-detail-page .tmdb-modal-hero img { width: 100%; height: 380px; object-fit: cover; }
-        @media (max-width: 768px) {
-            .tmdb-detail-page .tmdb-modal-hero img { height: auto; max-height: 260px; object-fit: contain; }
-        }
         .tmdb-subscribe-btn {
             position: absolute;
             bottom: 8px;
@@ -2020,12 +1989,6 @@
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
             color: var(--text-600);
         }
-        @media (max-width: 768px) {
-            .tmdb-grid { gap: 8px; }
-            .tmdb-poster { margin: 0 0 2px; }
-            .tmdb-poster .tmdb-score { font-size: 11px; padding: 2px 8px; }  /* 手机端评分标签与右上角集数角标一致 */
-            .tmdb-modal-hero img { max-height: 260px; object-fit: contain; }
-        }
 
         /* ============ 日志动态：移动端日志页列表样式 ============ */
 
@@ -2076,8 +2039,11 @@
 
     </style>
 </head>
-<body>
+<body data-page="system">
     <!-- 桌面端右上角日志弹窗入口已移除：日志动态统一由左侧导航「日志动态」页进入 -->
+    <!-- data-page 是「当前在哪一页」的唯一状态源，由 switchTab() 写入。
+         原来靠 body:has(#tab-x.active) 从 DOM 反推当前页，页面状态散落在 14 条 CSS 选择器里；
+         现在只认这一个属性，CSS 用 body[data-page="x"] 直接读。 -->
 
     <div class="layout">
         <aside class="drawer" id="drawer">
@@ -2695,6 +2661,8 @@
             }
             const nav = document.querySelector(`.nav-item[data-tab="${tab}"]`);
             if (nav) nav.classList.add('active');
+            // 单一状态源：CSS 只读 body[data-page]，页面切换在这里统一写一次
+            document.body.dataset.page = tab;
 
             const SUB_TABS = { user: 1, 'transfer-save': 1, transfer: 1, strm: 1, mediawarp: 1 };
             const toolbar = document.getElementById('topToolbar');
