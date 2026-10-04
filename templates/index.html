@@ -206,11 +206,17 @@
         #topToolbar.mode-log .back-btn { display: inline-flex !important; }
         .log-nav-btn { display: none; }
         body:has(#tab-bg.active) .log-nav-btn { display: inline-flex; }
+        /* 首页：左侧汉堡不显示，只留右侧后台服务器按钮（推右端） */
+        body:has(#tab-system.active) .hamburger-btn { display: none; }
+        body:has(#tab-system.active) .logs-btn { margin-left: auto; }
+        /* 后台页：汉堡显示，并排到日志图标右侧（log-nav 贴右，汉堡在其后） */
+        body:has(#tab-bg.active) #topToolbar.mode-log .hamburger-btn { display: inline-flex !important; order: 1; }
+        body:has(#tab-bg.active) #topToolbar.mode-log .log-nav-btn { margin-left: auto; }
         /* iOS 风格菜单：淡黑毛玻璃 + 白字 + 行分割线 + 右箭头 */
         .drawer {
             position: fixed;
             top: calc(60px + env(safe-area-inset-top));
-            left: 12px;
+            right: 12px;                 /* 默认右对齐；实际由 JS 按汉堡位置动态切换 left/right */
             z-index: 200;
             width: 232px;
             max-height: calc(100dvh - 88px);
@@ -223,11 +229,13 @@
             border-radius: 14px;
             box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 12px 36px -6px rgba(0, 0, 0, 0.50);
             transform: translateY(-10px) scale(0.96);
-            transform-origin: top left;
+            transform-origin: top right;
             opacity: 0;
             visibility: hidden;
             transition: transform 0.22s cubic-bezier(0.16, 0.68, 0.22, 1), opacity 0.2s ease, visibility 0.2s;
         }
+        /* 汉堡在左侧时（桌面端）：菜单改左对齐，动画起点同步到左上角 */
+        .drawer.anchor-left { right: auto; left: 12px; transform-origin: top left; }
         .drawer.open {
             transform: translateY(0) scale(1);
             opacity: 1;
@@ -2119,9 +2127,9 @@
                 <button class="toolbar-icon-btn save-btn mode-edit-right" onclick="saveTopConfig()" aria-label="保存配置">
                     <i class="fas fa-save"></i>
                 </button>
-                <!-- 日志（仅后台页右侧显示）：从汉堡移除后，日志入口移到这里 -->
+                <!-- 日志（仅后台页右侧显示）：文档/日志纸图标，与汉堡三杠区分 -->
                 <button class="toolbar-icon-btn log-nav-btn" onclick="clearLogsFilter(); switchTab('logs')" aria-label="日志动态">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="1.271" cy="5.186" r="1.271" fill="currentColor"/><path d="M6.203 5.186h16.831" fill="none" stroke="currentColor" stroke-width="1.932" stroke-linecap="round"/><circle cx="1.271" cy="12" r="1.271" fill="currentColor"/><path d="M6.203 12h16.831" fill="none" stroke="currentColor" stroke-width="1.932" stroke-linecap="round"/><circle cx="1.271" cy="18.814" r="1.271" fill="currentColor"/><path d="M6.203 18.814h11.746" fill="none" stroke="currentColor" stroke-width="1.932" stroke-linecap="round"/></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.932" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2.5H6.8A2.3 2.3 0 0 0 4.5 4.8v14.4A2.3 2.3 0 0 0 6.8 21.5h10.4a2.3 2.3 0 0 0 2.3-2.3V8z"/><path d="M14 2.5V8h5.5"/><path d="M8.2 12.5h7.6"/><path d="M8.2 16.2h7.6"/></svg>
                 </button>
             </div>
             <!-- ============ 日志动态 ============ -->
@@ -4351,6 +4359,15 @@
         function setDrawer(open) {
             const drawer = document.getElementById('drawer');
             if (!drawer) return;
+            if (open) {
+                // 菜单跟随汉堡位置：汉堡在屏幕右半 → 菜单右对齐，否则左对齐
+                const hamBtn = document.getElementById('hamburgerBtn');
+                if (hamBtn) {
+                    const r = hamBtn.getBoundingClientRect();
+                    const anchorLeft = (r.left + r.width / 2) < window.innerWidth / 2;
+                    drawer.classList.toggle('anchor-left', anchorLeft);
+                }
+            }
             drawer.classList.toggle('open', open);
             const hamBtn = document.getElementById('hamburgerBtn');
             if (hamBtn) hamBtn.classList.toggle('open', open);
