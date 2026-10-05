@@ -717,6 +717,8 @@
             pointer-events: none;
             /* .45s 太长（旧图已淡出、新图未到的空窗近半秒）；.15s 收尾更干脆——跟手段由 .dragging 摘掉过渡，不受此值影响 */
             transition: opacity .15s ease;
+            /* 全屏海报做 opacity 过渡，不提升合成层会回退 CPU 逐像素混合（实测拖动 75 → 723 fps） */
+            will-change: opacity;
         }
         #tab-system .entry-carousel .entry-card.active {
             opacity: 1;
@@ -2638,6 +2640,8 @@
         ];
 
         // ============ Tab 切换 ============
+        // 设置类子页（工具栏走「返回 + 保存」形态）；也是「返回」落点的判定依据
+        const SUB_TABS = { user: 1, 'transfer-save': 1, transfer: 1, strm: 1, mediawarp: 1 };
         function switchTab(tab) {
             const prevTab = switchTab._last;
             switchTab._last = tab;
@@ -2664,7 +2668,6 @@
             // 单一状态源：CSS 只读 body[data-page]，页面切换在这里统一写一次
             document.body.dataset.page = tab;
 
-            const SUB_TABS = { user: 1, 'transfer-save': 1, transfer: 1, strm: 1, mediawarp: 1 };
             const toolbar = document.getElementById('topToolbar');
             if (toolbar) {
                 toolbar.classList.toggle('mode-edit', !!SUB_TABS[tab]);
@@ -2772,6 +2775,8 @@
             const curTab = cur ? (cur.id || '').replace('tab-', '') : '';
             if (curTab === 'tmdb-detail') switchTab(_detailFromTab || 'system');
             else if (curTab === 'logs') switchTab(_logsFromTab || 'system');
+            // 设置类子页统一回「后台」——那是这些页面的入口（汉堡菜单所在页）
+            else if (SUB_TABS[curTab]) switchTab('bg');
             else switchTab('system');
         }
 
@@ -3731,6 +3736,10 @@
         function _entryImgSrc(i) {
             return `https://image.tmdb.org/t/p/w1280${i.backdrop_path || i.poster_path}`;
         }
+        // 底图只做 34px 模糊的背景，源分辨率无意义 → 用最小档（w300，底图档位里最小），解码≈瞬间
+        function _entryBgSrc(i) {
+            return `https://image.tmdb.org/t/p/w300${i.backdrop_path || i.poster_path}`;
+        }
         // 大图预解码：解码完再挂 DOM，否则换图那 200~400ms 露白底 = 闪白。
         // 按 url 存「是否就绪」而非「是否请求过」：后者二次调用会立刻回调，绕过等待 = 闪白
         const _heroPre = new Map();   // url -> { done, cbs[] }
@@ -3900,7 +3909,7 @@
                         if (!posterImg.isConnected) return;
                         posterImg.src = url;
                         if (wasEmpty) return;
-                        if (_entryPosterItems[_entryPosterIdx] === item) _updateHeroBg(url);
+                        if (_entryPosterItems[_entryPosterIdx] === item) _updateHeroBg(_entryBgSrc(item));
                     });
                 }
                 if (metaEl && metaEl.isConnected) {
@@ -3934,21 +3943,15 @@
             _ensureEntryDetail(_entryPosterIdx);
             _ensureEntryDetail(_entryPosterIdx + 1);   // 预取下一张，滑动时即时可见
             const item = _entryPosterItems[_entryPosterIdx];
-            if (item) _updateHeroBg((_isMobile() && item._heroPosterUrl) || _entryImgSrc(item));
+            if (item) _updateHeroBg(_entryBgSrc(item));
         }
-        let _heroBgSeq = 0;
         function _updateHeroBg(src) {
             const nextBg = `url("${src}")`;
             // 图没换就不要再走一遍淡出 → 淡入，否则每敲一个字符整页模糊背景闪一下
             if (nextBg === _heroBgCurrent) return;
             _heroBgCurrent = nextBg;
-            const seq = ++_heroBgSeq;
-            // 关键：先确认新图能画出来再撤旧底（预解码 → 换图 → 再淡入）
-            // 反过来「先把底淡成透明、等 180ms 再换 url」会让 background-image 指向无像素的图，露出白底 = 白色闪屏
-            _preheat(src, () => {
-                if (seq !== _heroBgSeq) return;      // 期间又切了下一张，本次作废
-                _paintHeroBg(nextBg);
-            });
+            // 底图已降到 w300（解码≈0），不再需要「预解码等待 + 代际计数」；保留淡出/淡入作过渡
+            _paintHeroBg(nextBg);
         }
         function _paintHeroBg(bg) {
             document.documentElement.style.setProperty('--hero-bg', bg);
@@ -4043,9 +4046,9 @@
                 else c.style.opacity = '';   // 其余九张保持 CSS 默认（opacity:0），清掉可能的残留
             });
             car.classList.add('dragging');
-            // 跟手时同步英雄底稿：目标卡的图若已预热过就直接用，避免文字先到、背景晚到
+            // 跟手时同步英雄底稿：w300 解码≈0，直接换，不必等预解码
             const item = _entryPosterItems[to];
-            if (item) _updateHeroBg((_isMobile() && item._heroPosterUrl) || _entryImgSrc(item));
+            if (item) _updateHeroBg(_entryBgSrc(item));
         }
 
         // 松手收尾必须在切换索引/类名之前调用：内联 opacity 优先级高于 .active 类，残留会把目标卡压成半透明
