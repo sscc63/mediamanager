@@ -52,6 +52,12 @@
             --fs-subtitle: 13.5px;
             --fs-label: 12px;
             --fs-meta: 11.5px;
+
+            /* 首页出血海报「一次切换」的统一时间轴：海报交叉淡化 / 文字整屏滑移 / 圆点指示
+               三处必须同值，否则读起来是三个各走各的动作（改前分别是 .15s / .38s / .2s，实测
+               海报比文字早 183ms 收尾、峰值差 13.8%）。末段轻微收敛，贴近 EplayerX 的回弹手感。 */
+            --entry-switch-dur: .38s;
+            --entry-switch-ease: cubic-bezier(.16,.84,.28,1);
         }
         html {
         background: var(--bg);
@@ -712,18 +718,26 @@
             inset: 0;
             opacity: 0;
             pointer-events: none;
-            /* .45s 太长（旧图已淡出、新图未到的空窗近半秒）；.15s 收尾更干脆——跟手段由 .dragging 摘掉过渡，不受此值影响 */
-            transition: opacity .15s ease;
-            /* 全屏海报做 opacity 过渡，不提升合成层会回退 CPU 逐像素混合（实测拖动 75 → 723 fps） */
-            will-change: opacity;
+            /* 与文字滑移、圆点指示共用同一条时间轴（见 --entry-switch-*）：三处时长/easing 必须一致。
+               跟手拖动由 .dragging 摘掉过渡，不受此值影响。 */
+            transition: opacity var(--entry-switch-dur) var(--entry-switch-ease);
         }
         #tab-system .entry-carousel .entry-card.active {
             opacity: 1;
             pointer-events: auto;
         }
-        /* 跟手拖动中摘掉过渡，让 opacity 直接等于手指进度；不摘会被 .22s 拖住变成延迟跟随，松手移除本类恢复过渡 */
+        /* 跟手拖动中摘掉过渡，让 opacity 直接等于手指进度；不摘会被 .22s 拖住变成延迟跟随，松手移除本类恢复过渡。
+           will-change 也**只在拖动期间**开：拖动是逐帧直写内联 opacity（样式变更不是动画），不提升合成层会回退
+           CPU 逐像素混合（实测 72 → 739 fps）。反过来，常驻会让 10 张卡全变常驻合成层，滚出屏幕的瓦片被丢弃后
+           滚回来要重新光栅化——单块瓦片耗时翻倍、静止期总光栅 9.8ms → 15.8ms，表现为「滚回海报先空一下」。
+           而点圆点/松手收尾走的是 transition，属可合成动画，浏览器本就会自动提层，不需要它。 */
         #tab-system .entry-carousel.dragging .entry-card {
             transition: none;
+            will-change: opacity;
+        }
+        /* 跟手时文字组也摘过渡：位移要直接等于手指进度，否则被 .38s 拖成延迟跟随 */
+        #tab-system .entry-carousel.dragging ~ .entry-text > .entry-tg {
+            transition: none !important;
         }
         /* 拖动中禁用文字选中，避免横向划动时选中标题/简介 */
         #tab-system .entry-carousel.dragging {
@@ -750,7 +764,21 @@
                 transparent 100%
             );
         }
-        #tab-system .entry-card > img.entry-brand {
+        /* 文字层：与海报层分离的单例容器（不随卡片 opacity 淡化），内部按条目各放一份 .entry-tg 文字组。
+           切换时「当前组」与「目标组」在层内**反向对滑**（对齐 EplayerX 首页）。 */
+        #tab-system .entry-text {
+            position: absolute;
+            inset: 0;
+            z-index: 2;                  /* 盖在海报之上 */
+            pointer-events: none;        /* 容器不挡手势，只有打开详情由外层卡片接收 */
+        }
+        /* 单条文字组：三个子元素共用同一套居中；横移由**组本身**承担（纯 px，不含 %） */
+        #tab-system .entry-text > .entry-tg {
+            position: absolute;
+            inset: 0;
+            transition: transform var(--entry-switch-dur) var(--entry-switch-ease);   /* 与海报淡化、圆点指示同轴 */
+        }
+        #tab-system .entry-text > .entry-tg > img.entry-brand {
             position: absolute;
             left: 50%;
             bottom: 18px;
@@ -758,30 +786,30 @@
             width: min(56%, 520px);        /* 桌面海报铺满 100vh，原 324px 在大幅面上偏小气 */
             height: auto;
             max-height: 132px;             /* 原 97px 会把宽幅 logo 压小、尺寸忽大忽小 */
-            transform: translateX(-50%);
+            transform: translateX(-50%);   /* 居中；横移由 .entry-tg 承担 */
             object-fit: contain;
             /* 双层投影：近距硬边勾出轮廓、远距柔光托底；再轻微提亮，避免白字糊进海报背景 */
             filter: drop-shadow(0 1px 2px rgba(0,0,0,.72)) drop-shadow(0 10px 28px rgba(0,0,0,.5)) brightness(1.06) contrast(1.04);
         }
         /* 桌面端徽标抬高必须写在基础规则之后：两条选择器特异性相同靠源顺序取胜，写前面会被 bottom:18px 覆盖 */
         @media (min-width: 769px) {
-            #tab-system .entry-card > img.entry-brand { bottom: 112px; }
+            #tab-system .entry-text > .entry-tg > img.entry-brand { bottom: 112px; }
         }
         /* 窄桌面（≤1279）：右侧悬浮卡固定占 300px，logo 需收窄否则压到卡片；宽屏走基础规则的 520px */
         @media (min-width: 769px) and (max-width: 1279px) {
-            #tab-system .entry-card > img.entry-brand { width: min(32%, 340px); max-height: 118px; }
+            #tab-system .entry-text > .entry-tg > img.entry-brand { width: min(32%, 340px); max-height: 118px; }
         }
-        #tab-system .entry-card > .entry-meta,
-        #tab-system .entry-card > .entry-overview {
+        #tab-system .entry-text > .entry-tg > .entry-meta,
+        #tab-system .entry-text > .entry-tg > .entry-overview {
             position: absolute;
             left: 50%;
-            transform: translateX(-50%);
+            transform: translateX(-50%);   /* 居中；横移由 .entry-tg 承担 */
             z-index: 2;
             width: min(88%, 760px);
             margin: 0;
             text-align: center;
         }
-        #tab-system .entry-card > .entry-meta {
+        #tab-system .entry-text > .entry-tg > .entry-meta {
             bottom: 74px;
             font-size: 12.5px;
             font-weight: 500;
@@ -789,7 +817,7 @@
             color: rgba(255,255,255,.82);
             text-shadow: 0 1px 6px rgba(0,0,0,.75);
         }
-        #tab-system .entry-card > .entry-overview {
+        #tab-system .entry-text > .entry-tg > .entry-overview {
             bottom: 34px;
             font-size: 13px;
             line-height: 1.55;
@@ -824,7 +852,11 @@
             background: rgba(255, 255, 255, 0.38);
             pointer-events: auto;
             cursor: pointer;
-            transition: background .2s ease, width .2s ease, height .2s ease, opacity .2s ease;
+            /* 与海报淡化、文字滑移同轴：圆点的白/灰与 4→6→8 尺寸变化要和切换一起走完 */
+            transition: background var(--entry-switch-dur) var(--entry-switch-ease),
+                        width var(--entry-switch-dur) var(--entry-switch-ease),
+                        height var(--entry-switch-dur) var(--entry-switch-ease),
+                        opacity var(--entry-switch-dur) var(--entry-switch-ease);
         }
         /* 热区外扩 4px：点直径 8 + gap 11 = 中心距 19，热区宽 16 < 19，相邻不重叠（重叠会命中 DOM 靠后者） */
         #tab-system .entry-dots .dot::after { content: ""; position: absolute; inset: -4px; }
@@ -1443,15 +1475,16 @@
                 object-position: center;   /* 不强制贴顶：出血上拉截的是海报上方留白，保住人物头部 */
             }
             /* 移动端是竖向出血海报，版式与桌面满屏不同，尺寸独立定义（勿与桌面共用） */
-            #tab-system .entry-card > img.entry-brand {
+            #tab-system .entry-text > .entry-tg > img.entry-brand {
                 width: min(82%, 336px);
                 height: auto;
                 max-height: 118px;
                 bottom: 88px;
             }
-            #tab-system .entry-card > .entry-meta {
+            #tab-system .entry-text > .entry-tg > .entry-meta {
                 position: absolute;
                 left: 20px; right: 20px;
+                width: auto;            /* 覆掉桌面的 min(88%,760px)：移动端由 left/right 夹出宽度，否则宽度溢出视口 */
                 bottom: 60px;
                 transform: none;
                 margin: 0;
@@ -1463,9 +1496,10 @@
                 text-shadow: 0 1px 3px rgba(0,0,0,.6);
                 z-index: 2;
             }
-            #tab-system .entry-card > .entry-overview {
+            #tab-system .entry-text > .entry-tg > .entry-overview {
                 position: absolute;
                 left: 24px; right: 24px;
+                width: auto;            /* 同上：移动端由 left/right 夹出宽度 */
                 bottom: 18px;
                 transform: none;
                 margin: 0;
@@ -3774,10 +3808,18 @@
         let _entryCardPool = new Map();
         let _entryCardVertical = null;   // 建卡时用的断点模式；跨过 768px 断点则整池作废重建
         function _entryCardKey(it) { return (it.media_type || 'movie') + ':' + it.id; }
+        // 只让「当前 ±1」这三条真正持有海报/logo：一张 original 解码后 20~32MB、一个 logo ≈9MB，
+        // 十条常驻会到 190MB+（桌面实测），滑出窗口的立刻释放解码位图
+        function _entryNearItems() {
+            const n = _entryPosterItems.length;
+            if (!n) return [];
+            return [-1, 0, 1].map(d => _entryPosterItems[((_entryPosterIdx + d) % n + n) % n]).filter(Boolean);
+        }
         // 弃卡前清 img.src：否则 2~8MB 大图的解码位图还压在内存里
         function _dropEntryCard(c) {
             const im = c && c.querySelector('img:not(.entry-brand)');
-            if (im) { im.onload = null; im.src = ''; }
+            // dataset.heroUrl 要一起清：否则重新进入窗口时会被 _syncEntryCardImage 的去重挡掉，图再也回不来
+            if (im) { im.onload = null; im.src = ''; im.removeAttribute('data-hero-url'); }
         }
         // 池子只保留当前在用的条目：每张卡挂着一个已解码大图，不设界会随榜单刷新越积越多
         function _pruneEntryCardPool(aliveItems) {
@@ -3819,33 +3861,19 @@
             const key = _entryCardKey(it);
             const hit = _entryCardPool.get(key);
             // 卡上记着它属于哪一条：换图时先 _preheat 新图、解码完再写 src，避免空白帧
-            if (hit) { hit._item = it; _syncEntryCardImage(hit, it); return hit; }
+            if (hit) { hit._item = it; return hit; }   // 图源交给 _updateEntryCarousel 按邻近窗口统一填
             const c = document.createElement('div');
             c.className = 'entry-card';
             c._item = it;
             const img = document.createElement('img');
-            // 不用 loading=lazy：非 active 的卡仍在渲染树里，lazy 会把解码推迟到滑动时才开始，撞上淡入就是闪白；十张全部预解码
+            // 不用 loading=lazy：非 active 的卡仍在渲染树里，lazy 会把解码推迟到滑动时才开始，撞上淡入就是闪白
             img.alt = '';
-            // 手机端首帧不预置带字海报，等待详情就绪后一次到位出无字版，避免「有字→无字」切换闪烁
-            img.src = vertical
-                ? ''
-                : `https://image.tmdb.org/t/p/original${it.backdrop_path || it.poster_path}`;
+            // 一律先留空，由 _updateEntryCarousel 按「当前 ±1」窗口填（十张 original 全量解码 ≈190MB，桌面实测）
+            img.src = '';
             c.appendChild(img);
-            const brand = document.createElement('img');
-            brand.className = 'entry-brand';
-            brand.alt = '';
-            brand.loading = 'lazy';
-            brand.hidden = true;
-            c.appendChild(brand);
-            const meta = document.createElement('div');
-            meta.className = 'entry-meta';
-            meta.hidden = true;
-            c.appendChild(meta);
-            const overview = document.createElement('div');
-            overview.className = 'entry-overview';
-            overview.hidden = true;
-            c.appendChild(overview);
-            // 详情不在这里拉：只对当前可见（及相邻）的一张按需请求，见 _ensureEntryDetail
+            // 文字组（logo + 年份·类型·评分 + 简介）是**每卡一份**：切换时新旧两份反向对滑（见 _dragEntryPoster / _slideEntryText）。
+            // 但**不随卡片 opacity 淡化**——故挂在卡外的 .entry-text 里（见 _entryTextLayer），只借 card._key 关联回条目
+            c._key = key;
             _entryCardPool.set(key, c);
             return c;
         }
@@ -3857,25 +3885,23 @@
             if (!strip) return;
             let car = strip.querySelector('.entry-carousel');
             if (!car) { car = document.createElement('div'); car.className = 'entry-carousel'; strip.appendChild(car); }
+            _entryTextLayer();   // 确保文字层在轮播之后（CSS 用 .dragging ~ .entry-text 摘过渡，顺序颠倒会失效）
             _entryCarouselGen++;   // 作废进行中的跟手拖动
             // 重建前清掉拖动残留：残留的内联 opacity 会带到新一轮，表现为刚进页面就有几张卡半透明；dragging 类一并清掉
             car.classList.remove('dragging');
             car.replaceChildren(..._entryPosterItems.map(_entryCard));
             [...car.querySelectorAll('.entry-card')].forEach(c => { c.style.opacity = ''; });
-            // 非 active 的卡在 idle 时预解码，滑动切过去才是即时的，不跟首屏渲染抢主线程
-            const idle = window.requestIdleCallback || (cb => setTimeout(cb, 200));
-            idle(() => _entryPosterItems.forEach((_, i) => {
-                const c = car.querySelectorAll('.entry-card')[i];
-                const im = c && c.querySelector('img:not(.entry-brand)');
-                if (im && im.decode) im.decode().catch(() => {});
-            }));
+            // 每条目预建文字组（DOM 一次成型；内容由 _renderEntryText 填），并清掉已下线条目的组
+            _entryPosterItems.forEach(it => _renderEntryText(it));
+            _pruneTextGroups();
             _entryPosterIdx = 0;
-            _updateEntryCarousel();
+            _updateEntryCarousel();   // 顺带按「当前 ±1」窗口填海报：非窗口的卡不持有大图
             _bindEntrySwipe(strip);
         }
-        // 徽标/无字海报路径按条目缓存 Promise，不缓存就每敲一个字符重拉 10 次详情接口
-        function _loadEntryDetail(item, brand, posterImg, metaEl, overviewEl) {
-            if (!item || !item.id || !brand) return;
+        // 详情 Promise 按条目缓存：不缓存就每敲一个字符重拉 10 次接口。
+        // 拿到数据后：无字海报写回该条目自己的卡，文字写进该条目自己的文字组
+        function _loadEntryDetail(item) {
+            if (!item || !item.id) return;
             if (!item._logoReq) {
                 // textless=1 只在手机端带：无文字海报只给手机端入口海报用，带上它后端才会补这一次请求
                 const tl = _isMobile() ? '&textless=1' : '';
@@ -3891,55 +3917,107 @@
                     .catch(() => { item._logoReq = null; return { logo: '', textless: '', date: '', genres: '', rating: 0, overview: '' }; });
             }
             item._logoReq.then(r => {
-                if (r.logo && brand.isConnected) {
-                    brand.src = `https://image.tmdb.org/t/p/original${r.logo}`;
-                    brand.hidden = false;
-                }
-                if (posterImg && posterImg.isConnected && _isMobile()) {
-                    const url = r.textless
-                        ? `https://image.tmdb.org/t/p/original${r.textless}`
-                        : `https://image.tmdb.org/t/p/original${item.poster_path || item.backdrop_path || ''}`;
-                    const wasEmpty = !posterImg.currentSrc || !posterImg.getAttribute('src');
-                    item._heroPosterUrl = url;
-                    _preheat(url, () => {
-                        if (!posterImg.isConnected) return;
-                        posterImg.src = url;
-                        if (wasEmpty) return;
-                        if (_entryPosterItems[_entryPosterIdx] === item) _updateHeroBg(_entryBgSrc(item));
-                    });
-                }
-                if (metaEl && metaEl.isConnected) {
-                    const tmdbTag = '<span style="display:inline-block;background:#01b4e4;color:#fff;font-size:6.5px;font-weight:700;line-height:1;padding:2px 4px;border-radius:3px;vertical-align:1px;margin-right:4px;letter-spacing:.03em">TMDB</span>';
-                    const parts = [r.date, r.genres, r.rating ? tmdbTag + Number(r.rating).toFixed(1) : ''].filter(Boolean);
-                    metaEl.innerHTML = parts.join('<span style="opacity:.5;margin:0 5px">·</span>');
-                    metaEl.hidden = !parts.length;
-                    overviewEl.textContent = r.overview;
-                    overviewEl.hidden = !r.overview;
-                }
+                item._detail = r;
+                _applyEntryPoster(item);
+                _renderEntryText(item);   // 每条目写自己的文字组：切到它时无需再等网络
             });
+        }
+        // 无字海报写回条目自己的卡（手机端才用无字版；桌面直接用带字 backdrop）
+        function _applyEntryPoster(item) {
+            if (!item || !_isMobile()) return;
+            const r = item._detail;
+            if (!r) return;
+            const car = document.querySelector('#tmdb-poster .entry-carousel');
+            if (!car) return;
+            const idx = _entryPosterItems.indexOf(item);
+            const card = idx >= 0 ? car.querySelectorAll('.entry-card')[idx] : null;
+            const posterImg = card && card.querySelector('img:not(.entry-brand)');
+            if (!posterImg || !posterImg.isConnected) return;
+            if (!_entryNearItems().includes(item)) return;   // 不在邻近窗口内：别为它解码大图，切到时再填
+            const url = r.textless
+                ? `https://image.tmdb.org/t/p/original${r.textless}`
+                : `https://image.tmdb.org/t/p/original${item.poster_path || item.backdrop_path || ''}`;
+            const wasEmpty = !posterImg.currentSrc || !posterImg.getAttribute('src');
+            item._heroPosterUrl = url;
+            _preheat(url, () => {
+                if (!posterImg.isConnected) return;
+                posterImg.src = url;
+                if (wasEmpty) return;
+                if (_entryPosterItems[_entryPosterIdx] === item) _updateHeroBg(_entryBgSrc(item));
+            });
+        }
+        // 把条目详情写进**它自己的**文字组：logo / 年份·类型·评分 / 简介
+        function _renderEntryText(item) {
+            const g = _textGroupOfItem(item);
+            if (!g) return;
+            const r = (item && item._detail) || null;
+            const brand = g.querySelector('.entry-brand');
+            const metaEl = g.querySelector('.entry-meta');
+            const overviewEl = g.querySelector('.entry-overview');
+            if (r && r.logo) {
+                const url = `https://image.tmdb.org/t/p/original${r.logo}`;
+                if (brand.dataset.logoUrl !== url) {
+                    brand.dataset.logoUrl = url;
+                    _preheat(url, () => { if (brand.isConnected) brand.src = url; });
+                }
+                brand.hidden = false;
+            } else {
+                brand.hidden = true;
+                brand.removeAttribute('src');
+            }
+            const tmdbTag = '<span style="display:inline-block;background:#01b4e4;color:#fff;font-size:6.5px;font-weight:700;line-height:1;padding:2px 4px;border-radius:3px;vertical-align:1px;margin-right:4px;letter-spacing:.03em">TMDB</span>';
+            const parts = r ? [r.date, r.genres, r.rating ? tmdbTag + Number(r.rating).toFixed(1) : ''].filter(Boolean) : [];
+            metaEl.innerHTML = parts.join('<span style="opacity:.5;margin:0 5px">·</span>');
+            metaEl.hidden = !parts.length;
+            overviewEl.textContent = (r && r.overview) || '';
+            overviewEl.hidden = !(r && r.overview);
         }
         // 只为「当前可见 + 下一张」拉详情：给 10 张都拉等于首屏白发 9 个请求；item._logoReq 按条目缓存 Promise
         function _ensureEntryDetail(idx) {
             if (idx < 0 || idx >= _entryPosterItems.length) return;
-            const car = document.querySelector('#tmdb-poster .entry-carousel');
-            if (!car) return;
-            const card = car.querySelectorAll('.entry-card')[idx];
-            if (!card) return;
-            _loadEntryDetail(_entryPosterItems[idx],
-                card.querySelector('.entry-brand'),
-                card.querySelector('img:not(.entry-brand)'),
-                card.querySelector('.entry-meta'),
-                card.querySelector('.entry-overview'));
+            _loadEntryDetail(_entryPosterItems[idx]);
         }
-        function _updateEntryCarousel() {
+        function _updateEntryCarousel(animateText) {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
             if (!car) return;
             [...car.querySelectorAll('.entry-card')].forEach((c, i) => c.classList.toggle('active', i === _entryPosterIdx));
             _renderEntryDots();
+            const item = _entryPosterItems[_entryPosterIdx];
+            const near = _entryNearItems();
+            near.forEach(it => _renderEntryText(it));   // 邻近组的文字/logo 一并备好，切过去才是即时的
+            _showOnlyTextGroup(item ? _entryCardKey(item) : '');   // 只显当前条的文字组，其余隐藏
+            if (animateText) _slideEntryText(item);   // 仅「切换」播放滑入；重建/刷新时不播，避免首屏与搜索时闪
+            // 海报同样只让窗口内的卡持有大图，其余释放解码位图
+            [...car.querySelectorAll('.entry-card')].forEach((c, i) => {
+                const it = _entryPosterItems[i];
+                if (it && near.includes(it)) _syncEntryCardImage(c, it); else _dropEntryCard(c);
+            });
             _ensureEntryDetail(_entryPosterIdx);
             _ensureEntryDetail(_entryPosterIdx + 1);   // 预取下一张，滑动时即时可见
-            const item = _entryPosterItems[_entryPosterIdx];
             if (item) _updateHeroBg(_entryBgSrc(item));
+        }
+        // 读文字组当前的实际位移（内联值可能是 ''，必须走计算样式）
+        function _txOf(g) {
+            if (!g) return 0;
+            const m = getComputedStyle(g).transform;
+            return m === 'none' ? 0 : (parseFloat(m.split(',')[4]) || 0);
+        }
+        // 让文字组从 fromTx 过渡到 toTx：先硬写起点、强制 reflow、再交回 CSS 过渡（否则起止两帧被合并）
+        function _resumeSlide(g, fromTx, toTx) {
+            if (!g) return;
+            g.style.transition = 'none';
+            _txGroup(g, fromTx);
+            void g.offsetWidth;
+            g.style.transition = '';
+            _txGroup(g, toTx);
+        }
+        // 非跟手切换（点圆点/自动）：当前条文字组**从右侧屏外整屏滑入**到位，无淡化——对齐 EplayerX。
+        // 位移写在**该条自己的 .entry-tg 组**上（纯 px），与三行各自的居中 transform 解耦。
+        // fromTx：快扫续滑时传「已经走到哪了」，从那里滑到 0；不传则从屏外整屏滑入。
+        function _slideEntryText(item, fromTx) {
+            const g = _textGroupOfItem(item || _entryPosterItems[_entryPosterIdx]);
+            if (!g) return;
+            _resumeSlide(g, fromTx != null ? fromTx : (window.innerWidth || 375), 0);
         }
         function _updateHeroBg(src) {
             const nextBg = `url("${src}")`;
@@ -3986,10 +4064,11 @@
                 d.onclick = e => { e.stopPropagation(); _setEntryPoster(i); };   // 拦冒泡，否则会触发海报打开详情
             });
         }
-        function _setEntryPoster(index) {
+        function _setEntryPoster(index, fromDrag) {
             if (!_entryPosterItems.length) return;
             _entryPosterIdx = (index + _entryPosterItems.length) % _entryPosterItems.length;
-            _updateEntryCarousel();
+            // 跟手切换（fromDrag）时文字已随手指到位，不能再播滑入，否则会二次跳动
+            _updateEntryCarousel(!fromDrag);
         }
         function openHeroEntryDetail() {
             const item = _entryPosterItems[_entryPosterIdx];
@@ -4011,15 +4090,97 @@
                 if (it) _preheat((_isMobile() && it._heroPosterUrl) || _entryImgSrc(it));
             });
         }
-        const ENTRY_SWIPE_DIST = 110;
+        // 松手判定：划满「一屏的 40%」即切换（与一屏进度基准配套；原固定 110px 在 430 屏上仅 25%，
+        // 会出现「文字才走 1/4 就翻篇」的脱节感）
+        const ENTRY_SWIPE_RATIO = 0.4;
+        function _entrySwipeDist() { return (window.innerWidth || 375) * ENTRY_SWIPE_RATIO; }
+        // 快扫即翻：位移没到阈值，但「滑得够快」也认翻页（对齐 iOS fling 手感）。
+        // 必须同时滑过 ENTRY_FLING_MIN，否则原地快速抖动（位移 0、瞬时速度极大）也会翻页。
+        const ENTRY_FLING_MIN = 20;        // px：至少滑这么多才认快扫
+        const ENTRY_FLING_SPEED = 0.35;    // px/ms（= 350px/s）：低于此速度不算快扫
 
         function _entryCards() {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
             return car ? [...car.querySelectorAll('.entry-card')] : [];
         }
 
-        // 拖动中把手指进度 p 写进两张卡的内联 opacity：当前 1→0、目标 0→1 全程互补（无双淡空窗），p 夹在 [0,1] 给出「已划到位」的手感
-        // 文字/徽标是子元素，随卡片整体淡化，无需单独控制
+        // 文字层：单例容器，内含**每条目一份**文字组（logo + 年份·类型·评分 + 简介）。
+        // 不在卡内、不随卡片 opacity 淡化；切换时新旧两份**反向对滑**（对齐 EplayerX 首页）。
+        function _entryTextLayer() {
+            const strip = document.getElementById('tmdb-poster');
+            if (!strip) return null;
+            let layer = strip.querySelector('.entry-text');
+            if (layer) return layer;
+            layer = document.createElement('div');
+            layer.className = 'entry-text';
+            strip.appendChild(layer);
+            return layer;
+        }
+        // 取/建某条目的文字组；组用 data-key 关联回卡片，切条时不重建 DOM（避免 logo 图重新解码闪白）。
+        // Map 缓存：跟手每帧都要取当前/目标两组，避免每帧 querySelector。
+        const _entryTextGroupMap = new Map();
+        function _entryTextGroup(key) {
+            if (!key) return null;
+            const hit = _entryTextGroupMap.get(key);
+            if (hit && hit.isConnected) return hit;
+            const layer = _entryTextLayer();
+            if (!layer) return null;
+            let g = layer.querySelector('.entry-tg[data-key="' + CSS.escape(key) + '"]');
+            if (!g) {
+                g = document.createElement('div');
+                g.className = 'entry-tg';
+                g.dataset.key = key;
+                const brand = document.createElement('img');
+                brand.className = 'entry-brand';
+                brand.alt = '';
+                brand.hidden = true;
+                const meta = document.createElement('div');
+                meta.className = 'entry-meta';
+                meta.hidden = true;
+                const overview = document.createElement('div');
+                overview.className = 'entry-overview';
+                overview.hidden = true;
+                g.append(brand, meta, overview);
+                layer.appendChild(g);
+            }
+            _entryTextGroupMap.set(key, g);
+            return g;
+        }
+        // 条目 -> 文字组（按卡 key 定位）
+        function _textGroupOfItem(item) { return item ? _entryTextGroup(_entryCardKey(item)) : null; }
+        // 组位移（纯 px 偏移，不含 %：避开「translateX 里混 % + var() 变量被丢弃」的坑）
+        function _txGroup(g, tx) { if (g) g.style.transform = 'translateX(' + tx + 'px)'; }
+        // 只让当前项文字组可见，其余隐藏（防重建/切片后旧组残留）
+        function _showOnlyTextGroup(key) {
+            const layer = _entryTextLayer();
+            if (!layer) return;
+            [...layer.querySelectorAll('.entry-tg')].forEach(g => {
+                g.style.opacity = g.dataset.key === key ? '' : '0';
+                g.style.transform = '';          // 清跟手/滑入残留位移
+                g.style.pointerEvents = 'none';
+            });
+            // 裁剪：非当前组不参与渲染
+            _pruneTextGroups();
+        }
+        // 层内文字组只保留榜单内还在的条目（卡片池同样按 10 条封顶，见 renderEntryPosters）
+        function _pruneTextGroups() {
+            const layer = _entryTextLayer();
+            if (!layer) return;
+            const alive = new Set(_entryNearItems().map(_entryCardKey));
+            [...layer.querySelectorAll('.entry-tg')].forEach(g => {
+                if (!alive.has(g.dataset.key)) {
+                    const im = g.querySelector('.entry-brand');
+                    if (im) { im.onload = null; im.src = ''; }
+                    _entryTextGroupMap.delete(g.dataset.key);
+                    g.remove();
+                }
+            });
+        }
+
+        // 拖动中把手指进度写进两张卡的内联 opacity：当前 1→0、目标 0→1 全程互补（无双淡空窗），夹在 [0,1] 给出「已划到位」的手感。
+        // ⚠️ 进度基准 = 一屏宽：海报淡化必须与文字 1:1 横移**同节奏**，
+        //    否则海报早早切完、文字才走 1/4，观感脱节（实测差 74%）。
+        let _dragLastFrom = -1, _dragLastTo = -1;   // 记录上一帧交叉的两张卡，避免每帧重写其余八张
         function _dragEntryPoster(from, dir, dx) {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
             if (!car) return;
@@ -4027,12 +4188,25 @@
             const n = cards.length;
             if (n < 2) return;
             const to = ((from + dir) % n + n) % n;
-            const p = Math.max(0, Math.min(1, Math.abs(dx) / ENTRY_SWIPE_DIST));
-            cards.forEach((c, i) => {
-                if (i === from) c.style.opacity = String(1 - p);
-                else if (i === to) c.style.opacity = String(p);
-                else c.style.opacity = '';   // 其余九张保持 CSS 默认（opacity:0），清掉可能的残留
-            });
+            const OPP = window.innerWidth || 375;      // 一屏宽：文字与海报共用的进度基准
+            const p = Math.max(0, Math.min(1, Math.abs(dx) / OPP));   // 归一化进度（0 → 走满一屏）
+            // 只动参与交叉的两张卡：其余九张上一帧已是 CSS 默认 opacity:0，无需每帧重写（省掉 8 次样式写入）
+            if (_dragLastFrom !== from || _dragLastTo !== to) {
+                cards.forEach((c, i) => { if (i !== from && i !== to) c.style.opacity = ''; });
+                _dragLastFrom = from; _dragLastTo = to;
+            }
+            cards[from].style.opacity = String(1 - p);
+            cards[to].style.opacity = String(p);
+            // 两组文字**整屏**反向对滑（对齐 EplayerX），**不做淡化**（纯横移）：
+            //   向左划（dir=1）：当前组左移出边界、目标组从右侧屏外进来；向右划镜像。
+            //   位移 1:1 跟手（手指走多少、文字走多少），走满一屏 = 恰好移出/就位，与海报淡化同节奏。
+            const gf = _textGroupOfItem(_entryPosterItems[from]);
+            const gt = _textGroupOfItem(_entryPosterItems[to]);
+            const sgn = dir > 0 ? -1 : 1;          // 当前组退出的方向
+            _txGroup(gf, sgn * OPP * p);                     // 当前组：0 → ∓一屏（手指走多少跟多少）
+            _txGroup(gt, -sgn * OPP * (1 - p));              // 目标组：±一屏 → 0（与当前组互补，正好从屏外进到居中）
+            if (gf) gf.style.opacity = '';          // 明确不淡化：清掉可能的旧残留
+            if (gt) { gt.style.opacity = ''; gt.style.visibility = ''; }
             car.classList.add('dragging');
             // 跟手时同步英雄底稿：w300 解码≈0，直接换，不必等预解码
             const item = _entryPosterItems[to];
@@ -4046,6 +4220,10 @@
             if (!car) return;
             car.classList.remove('dragging');
             _entryCards().forEach(c => { c.style.opacity = ''; });
+            _dragLastFrom = _dragLastTo = -1;
+            // 跟手残留的文字位移必须清除，否则会压住 CSS 默认无偏移状态而错位；可见性交回 _updateEntryCarousel 统一裁决
+            const layer = _entryTextLayer();
+            if (layer) [...layer.querySelectorAll('.entry-tg')].forEach(g => { g.style.transform = ''; g.style.opacity = ''; });
             if (applied) return;   // 调用方随后会走 _setEntryPoster 切好索引与类名
             // 未过阈值时索引不变，但内联 opacity 已清、.active 未重算，需显式刷新让当前卡回到 opacity:1
             _updateEntryCarousel();
@@ -4058,7 +4236,7 @@
             let _drag = null;
             strip.addEventListener('touchstart', e => {
                 if (!e.touches || !e.touches[0]) return;
-                _entryPosterTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                _entryPosterTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY, t0: performance.now() };
                 _drag = null;
                 // 手指刚落下就预热左右相邻两张，否则那 0.22s 的淡入基本全花在下载+解码上，看起来就是闪
                 _preheatNeighborEntry();
@@ -4070,9 +4248,14 @@
                 const dx = c.clientX - t.x, dy = c.clientY - t.y;
                 if (!_drag) {
                     // 方向锁定：纵向分量更大就认定是竖划页面；一旦锁定横向就持续跟手，中途不改判（否则会抖）
-                    if (Math.abs(dx) < 12) return;                        // 位移太小，方向还不明确
+                    // 阈值压到 6px：12px 死区会让手指滑一小段文字仍不动，观感就是"不跟手"
+                    if (Math.abs(dx) < 6) return;                         // 位移太小，方向还不明确
                     if (Math.abs(dx) <= Math.abs(dy)) return;             // 竖向为主 → 让页面滚
-                    _drag = { dir: dx < 0 ? 1 : -1, locked: true, gen: _entryCarouselGen, from: _entryPosterIdx };
+                    _drag = { dir: dx < 0 ? 1 : -1, locked: true, gen: _entryCarouselGen, from: _entryPosterIdx, base: t.x };
+                    // 锁定瞬间就把手指已走的位移补上（原先从 0 起算 → 起步丢帧）
+                    e.preventDefault();
+                    _dragEntryPoster(_drag.from, _drag.dir, dx);
+                    return;
                 }
                 if (!_drag.locked || _drag.gen !== _entryCarouselGen) return;   // 轮播已重建 → 本次作废
                 e.preventDefault();   // 已确认是横向切海报 → 锁住页面滚动
@@ -4086,12 +4269,31 @@
                 if (d.gen !== _entryCarouselGen) { _endEntryDrag(true); return; }
                 const c = (e.changedTouches && e.changedTouches[0]) || null;
                 const dx = c ? c.clientX - t.x : 0;
-                // 过阈值（阈值的一半）才真正切过去；否则弹回原图不改索引
-                const applied = Math.abs(dx) >= ENTRY_SWIPE_DIST / 2;
+                const dist = Math.abs(dx);
+                // 过阈值才真正切过去；否则弹回原图不改索引（阈值与一屏进度基准配套，见 _entrySwipeDist）
+                const passed = dist >= _entrySwipeDist();
+                // 快扫即翻：位移没到阈值，但滑得够快也认翻页（须同时滑过 ENTRY_FLING_MIN，防原地抖动）
+                const flung = !passed && dist >= ENTRY_FLING_MIN
+                    && dist / Math.max(1, performance.now() - t.t0) >= ENTRY_FLING_SPEED;
+                const applied = passed || flung;
+                // 快扫时文字只走了一部分，先记下两组当前位置；切索引后从那里续滑到终点（否则会瞬移一大截）
+                let resume = null;
+                if (flung) {
+                    const OPP = window.innerWidth || 375, sgn = d.dir > 0 ? -1 : 1;
+                    const n = _entryPosterItems.length;
+                    const gf = _textGroupOfItem(_entryPosterItems[d.from]);
+                    const gt = _textGroupOfItem(_entryPosterItems[((d.from + d.dir) % n + n) % n]);
+                    resume = { gf, gt, txF: _txOf(gf), txT: _txOf(gt), out: sgn * OPP };
+                }
                 // 必须先清内联 opacity、恢复 transition 再切索引：先切类名会让目标卡被残留的 opacity 压着不亮
                 _endEntryDrag(applied);
                 if (applied) {
-                    _setEntryPoster(d.from + d.dir);
+                    _setEntryPoster(d.from + d.dir, true);   // 跟手切换：文字已随手指到位，不再播滑入
+                    if (resume) {
+                        resume.gf.style.opacity = '';        // _showOnlyTextGroup 刚把旧组隐藏，续滑期间要它可见
+                        _resumeSlide(resume.gf, resume.txF, resume.out);   // 旧组：从当前位置继续滑出屏
+                        _resumeSlide(resume.gt, resume.txT, 0);            // 新组：从当前位置滑到居中
+                    }
                     _preheatNeighborEntry();   // 补预热新的左右邻居，为下一次滑动准备
                 }
             };
