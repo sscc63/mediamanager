@@ -734,9 +734,13 @@
             transition: none;
             will-change: opacity;
         }
-        /* 跟手时文字组也摘过渡：位移要直接等于手指进度，否则被 .38s 拖成延迟跟随 */
+        /* 跟手时文字组也摘过渡：位移要直接等于手指进度，否则被 .38s 拖成延迟跟随。
+           will-change 同样只在拖动期开：逐帧直写内联 transform 属样式变更不是动画，不提升合成层会
+           每帧重光栅整屏文字层（内含 drop-shadow 滤镜 + text-shadow，滤镜无法复用缓存）——表现为
+           「整个画面都在抖」；提层后滤镜只光栅一次、之后只做层位移。常驻会让两组全屏文字层一直占位。 */
         #tab-system .entry-carousel.dragging ~ .entry-text > .entry-tg {
             transition: none !important;
+            will-change: transform;
         }
         /* 拖动中禁用文字选中，避免横向划动时选中标题/简介 */
         #tab-system .entry-carousel.dragging {
