@@ -35,8 +35,7 @@
             --text-400: #A1A1AA;           /* zinc-400 浅灰 */
             --text-300: #D4D4D8;           /* zinc-300 线框浅灰 */
 
-            --bg: #0c0c10;                 /* 深色底：与 body::before 的 background-color 一致，
-                                               避免海报切换时 body::before opacity 低导致浅色底透出闪白 */
+            --bg: #0c0c10;                 /* 深色底：与 body::before 的 background-color 一致，避免浅色底透出闪白 */
             --surface: #FFFFFF;
             --border: #E4E4E7;             /* zinc-200 */
             --border-strong: #D4D4D8;      /* zinc-300 */
@@ -89,11 +88,9 @@
             opacity: .35;
             -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
             mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-            transition: opacity .1s ease;
             transform: translateZ(0);
             will-change: opacity;
         }
-        body.hero-bg-changing::before { opacity: 0; }
         /* 系统页激活时的沉浸式适配：@max768 与 @min769 两份相同，且两断点无缝覆盖全宽度 → 提为基础规则 */
         body[data-page="system"] .content { position: relative; z-index: 1; }
         body[data-page="system"] .toolbar-icon-btn { color: #fff; }
@@ -3729,8 +3726,7 @@
         let _entryPosterAll = [];
         let _entryPosterIdx = 0;
         let _entryPosterTouch = null;
-        let _heroBgTimer = null;
-        let _heroBgCurrent = null;   // 已应用的 --hero-bg，同一张图不重复走淡出淡入
+        let _heroBgCurrent = null;   // 已应用的 --hero-bg，同一张图不重复重设
         // 断点判据与 CSS @media(max-width:768px) 同源：innerWidth 含滚动条宽，会与媒体查询不一致
         function _isMobile() { return matchMedia('(max-width: 768px)').matches; }
         function _entryImgSrc(i) {
@@ -3947,19 +3943,11 @@
         }
         function _updateHeroBg(src) {
             const nextBg = `url("${src}")`;
-            // 图没换就不要再走一遍淡出 → 淡入，否则每敲一个字符整页模糊背景闪一下
+            // 图没换就不要重设，否则每敲一个字符整页模糊背景重画一次
             if (nextBg === _heroBgCurrent) return;
             _heroBgCurrent = nextBg;
-            // 底图已降到 w300（解码≈0），不再需要「预解码等待 + 代际计数」；保留淡出/淡入作过渡
-            _paintHeroBg(nextBg);
-        }
-        function _paintHeroBg(bg) {
-            document.documentElement.style.setProperty('--hero-bg', bg);
-            document.body.classList.add('hero-bg-changing');
-            if (_heroBgTimer) clearTimeout(_heroBgTimer);
-            _heroBgTimer = setTimeout(() => {
-                requestAnimationFrame(() => document.body.classList.remove('hero-bg-changing'));
-            }, 40);
+            // 底图是 w300，解码≈0，直接换即可，不需要淡出淡入兜底
+            document.documentElement.style.setProperty('--hero-bg', nextBg);
         }
         // 五点滑动窗口指示器：DOM 固定 N 个槽位，窗口随当前项滑动，两端用小点暗示窗口外还有。
         // 槽位复用而非每次重建，避免切换时整排重排导致动画抖动。
