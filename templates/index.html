@@ -81,7 +81,13 @@
         body::before {
             content: "";
             position: fixed;
-            inset: -70px;
+            /* 缩到 1/4、blur 半径也 ÷4，再 scale(4) 还原：屏幕上的模糊半径不变，但参与模糊的像素数 ↓16×。
+               全屏 filter: blur() 只在合成器产帧时计费 → 实测拖动期合成线程 >16ms 长任务 64 → 0。 */
+            inset: auto;
+            left: -17.5px;
+            top: -17.5px;
+            width: calc((100vw + 140px) / 4);
+            height: calc((100vh + 140px) / 4);
             z-index: 0;
             pointer-events: none;
             /* 不透明底色 + 海报叠图：图未解码时 background-image 有声明无像素，透明底会露白，叠深色基底最多暗一下不会闪白 */
@@ -90,11 +96,12 @@
             background-size: cover, cover;
             background-position: center top;
             background-repeat: no-repeat;
-            filter: blur(34px) saturate(1.05);
+            filter: blur(8.5px) saturate(1.05);
             opacity: .35;
             -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
             mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-            transform: translateZ(0);
+            transform: scale(4);
+            transform-origin: 0 0;
             will-change: opacity;
         }
         /* 系统页激活时的沉浸式适配：@max768 与 @min769 两份相同，且两断点无缝覆盖全宽度 → 提为基础规则 */
@@ -279,14 +286,6 @@
         .tab-panel { display: none; animation: fadeIn 0.28s ease; }
         .tab-panel.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slideInL { from { opacity: 0; transform: translateX(-42px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes slideInR { from { opacity: 0; transform: translateX(42px); } to { opacity: 1; transform: translateX(0); } }
-        .tab-panel.active.slide-l { animation: slideInL .34s cubic-bezier(0.2, 0.7, 0.2, 1); }
-        .tab-panel.active.slide-r { animation: slideInR .34s cubic-bezier(0.2, 0.7, 0.2, 1); }
-        @keyframes slideInFullL { from { opacity: 0; transform: translateX(-100%); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes slideInFullR { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
-        .tab-panel.active.slide-fl { animation: slideInFullL .44s cubic-bezier(0.16, 0.68, 0.22, 1); }
-        .tab-panel.active.slide-fr { animation: slideInFullR .44s cubic-bezier(0.16, 0.68, 0.22, 1); }
 
         /* ============ 卡片（克制的平板面层） ============ */
         .card {
@@ -1442,7 +1441,7 @@
                 background-size: cover, cover;
                 background-position: center;
                 background-repeat: no-repeat;
-                filter: blur(56px) saturate(1.15);
+                filter: blur(14px) saturate(1.15);
                 opacity: 1;
                 -webkit-mask-image: none;
                 mask-image: none;
@@ -2683,17 +2682,11 @@
                 if (dc && !dc.firstElementChild) { switchTab('tmdb'); return; }
             }
             const panel = document.getElementById('tab-' + tab);
-            const prevPanel = prevTab ? document.getElementById('tab-' + prevTab) : null;
-            const isSysBg = !!prevPanel && ((tab === 'system' && prevTab === 'bg') || (tab === 'bg' && prevTab === 'system'));
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active', 'slide-l', 'slide-r', 'slide-fl', 'slide-fr'));
-            if (panel) {
-                if (isSysBg) {
-                    const mobile = window.matchMedia('(max-width: 768px)').matches;
-                    panel.classList.add(tab === 'bg' ? (mobile ? 'slide-fr' : 'slide-r') : (mobile ? 'slide-fl' : 'slide-l'));
-                }
-                panel.classList.add('active');
-            }
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            // system↔bg 不再横向滑入：整块满屏面板（original 大图）在 display:none 期间瓦片已被丢弃，
+            // 边滑边从零重光栅会让左侧一带滞留旧帧（录屏实测 ≈134ms）。改走基础规则的 fadeIn。
+            if (panel) panel.classList.add('active');
             const nav = document.querySelector(`.nav-item[data-tab="${tab}"]`);
             if (nav) nav.classList.add('active');
             // 单一状态源：CSS 只读 body[data-page]，页面切换在这里统一写一次
@@ -4304,7 +4297,7 @@
         async function loadTmdb(force, silent) {
             if (silent) {
                 try {
-                    const data = await fetchRankOnce('/api/tmdb?category=trending&type=tv&time_window=day');
+                    const data = await fetchRankOnce('/api/tmdb?category=trending&type=movie&time_window=day');
                     if (data && data.items && data.items.length) renderEntryPosters(data.items);
                 } catch (e) { /* 静默失败，入口保持为空 */ }
                 return;
