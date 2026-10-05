@@ -55,9 +55,16 @@
 
             /* 首页出血海报「一次切换」的统一时间轴：海报交叉淡化 / 文字整屏滑移 / 圆点指示
                三处必须同值，否则读起来是三个各走各的动作（改前分别是 .15s / .38s / .2s，实测
-               海报比文字早 183ms 收尾、峰值差 13.8%）。末段轻微收敛，贴近 EplayerX 的回弹手感。 */
+               海报比文字早 183ms 收尾、峰值差 13.8%）。
+               缓动起始斜率 = 松手起步速度 × 时长 ÷ 剩余距离，直接决定「松手瞬间跳不跳速」：
+               原 .16/.84 斜率 = .84/.16 = 5.25 → 松手时文字速度是手指的 4.7~5.25 倍（慢拖实测 6 倍），
+               观感是「窜一下」。改 easeOutCubic 斜率 .61/.215 ≈ 2.84，跳速减半、末段仍收敛到 0。 */
             --entry-switch-dur: .60s;
-            --entry-switch-ease: cubic-bezier(.16,.84,.28,1);
+            --entry-switch-ease: cubic-bezier(.215,.61,.355,1);
+            /* 海报专用进度曲线：与文字**同时长**（所以仍同刻完成），但形状是「前段慢、后端快」的凸曲线。
+               跟手期在 JS 里按 p² 映射（见 _dragEntryPoster），松手收尾期用这条 easeInQuad。
+               代价：海报会滞后文字，拖动中能看到「新文字压在旧海报上」。 */
+            --entry-poster-ease: cubic-bezier(.55,.085,.68,.53);
         }
         html {
         background: var(--bg);
@@ -102,7 +109,6 @@
             mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
             transform: scale(4);
             transform-origin: 0 0;
-            will-change: opacity;
         }
         /* 系统页激活时的沉浸式适配：@max768 与 @min769 两份相同，且两断点无缝覆盖全宽度 → 提为基础规则 */
         body[data-page="system"] .content { position: relative; z-index: 1; }
@@ -717,30 +723,29 @@
             inset: 0;
             opacity: 0;
             pointer-events: none;
-            /* 与文字滑移、圆点指示共用同一条时间轴（见 --entry-switch-*）：三处时长/easing 必须一致。
+            /* 时长与文字滑移/圆点指示共用（--entry-switch-dur）→ 仍同刻完成；
+               但海报走自己的进度曲线 --entry-poster-ease（前段慢、后端快），所以会滞后文字再追上。
                跟手拖动由 .dragging 摘掉过渡，不受此值影响。 */
-            transition: opacity var(--entry-switch-dur) var(--entry-switch-ease);
+            transition: opacity var(--entry-switch-dur) var(--entry-poster-ease);
         }
         #tab-system .entry-carousel .entry-card.active {
             opacity: 1;
             pointer-events: auto;
         }
         /* 跟手拖动中摘掉过渡，让 opacity 直接等于手指进度；不摘会被 .22s 拖住变成延迟跟随，松手移除本类恢复过渡。
-           will-change 也**只在拖动期间**开：拖动是逐帧直写内联 opacity（样式变更不是动画），不提升合成层会回退
-           CPU 逐像素混合（实测 72 → 739 fps）。反过来，常驻会让 10 张卡全变常驻合成层，滚出屏幕的瓦片被丢弃后
-           滚回来要重新光栅化——单块瓦片耗时翻倍、静止期总光栅 9.8ms → 15.8ms，表现为「滚回海报先空一下」。
-           而点圆点/松手收尾走的是 transition，属可合成动画，浏览器本就会自动提层，不需要它。 */
+           提层（will-change）**故意不写在这里**：靠 .dragging 会批量命中**全部 10 张卡**，起手第一帧白建 8 个
+           全屏合成层（实测拖动期合成层 22 → 38、总面积 13.45M → 43.74M px），而真正逐帧改 opacity 的只有
+           参与交叉的那两张 —— 改由 JS 精确给那两张写内联 will-change（见 _dragEntryPoster）。
+           提层本身仍必须：逐帧直写内联 opacity 属样式变更不是动画，不提层会回退 CPU 逐像素混合（实测 72 → 739 fps）。
+           点圆点/松手收尾走 transition，属可合成动画，浏览器本就会自动提层，不需要它。 */
         #tab-system .entry-carousel.dragging .entry-card {
             transition: none;
-            will-change: opacity;
         }
         /* 跟手时文字组也摘过渡：位移要直接等于手指进度，否则被 .38s 拖成延迟跟随。
-           will-change 同样只在拖动期开：逐帧直写内联 transform 属样式变更不是动画，不提升合成层会
-           每帧重光栅整屏文字层（内含 drop-shadow 滤镜 + text-shadow，滤镜无法复用缓存）——表现为
-           「整个画面都在抖」；提层后滤镜只光栅一次、之后只做层位移。常驻会让两组全屏文字层一直占位。 */
+           提层同理改由 JS 只给参与对滑的两组文字写 will-change（见 _dragEntryPoster）——不提层会每帧重光栅
+           整屏文字层（内含 drop-shadow 滤镜 + text-shadow，滤镜无法复用缓存），表现为「整个画面都在抖」。 */
         #tab-system .entry-carousel.dragging ~ .entry-text > .entry-tg {
             transition: none !important;
-            will-change: transform;
         }
         /* 拖动中禁用文字选中，避免横向划动时选中标题/简介 */
         #tab-system .entry-carousel.dragging {
@@ -4174,10 +4179,11 @@
             });
         }
 
-        // 拖动中把手指进度写进两张卡的内联 opacity：当前 1→0、目标 0→1 全程互补（无双淡空窗），夹在 [0,1] 给出「已划到位」的手感。
-        // ⚠️ 进度基准 = 一屏宽：海报淡化必须与文字 1:1 横移**同节奏**，
-        //    否则海报早早切完、文字才走 1/4，观感脱节（实测差 74%）。
+        // 拖动中把手指进度写进两张卡的内联 opacity：当前 1→0、目标 0→1 全程互补（无双淡空窗）。
+        // 进度基准 = 一屏宽；海报走**凸曲线** p²（前段慢、后端快），文字仍 1:1 跟手 —— 于是海报滞后、
+        // 末段追上，两者在走满一屏时同刻完成。代价：拖动中会看到「新文字压在旧海报上」。
         let _dragLastFrom = -1, _dragLastTo = -1;   // 记录上一帧交叉的两张卡，避免每帧重写其余八张
+        let _entryWcTimer = 0;                      // 拖动结束后延迟清 will-change 的定时器（见 _endEntryDrag）
         function _dragEntryPoster(from, dir, dx) {
             const car = document.querySelector('#tmdb-poster .entry-carousel');
             if (!car) return;
@@ -4185,20 +4191,28 @@
             const n = cards.length;
             if (n < 2) return;
             const to = ((from + dir) % n + n) % n;
+            const gf = _textGroupOfItem(_entryPosterItems[from]);
+            const gt = _textGroupOfItem(_entryPosterItems[to]);
             const OPP = window.innerWidth || 375;      // 一屏宽：文字与海报共用的进度基准
             const p = Math.max(0, Math.min(1, Math.abs(dx) / OPP));   // 归一化进度（0 → 走满一屏）
+            const pp = p * p;   // 海报进度：前段慢、后端快（凸）；文字仍用 p（1:1 跟手）
             // 只动参与交叉的两张卡：其余九张上一帧已是 CSS 默认 opacity:0，无需每帧重写（省掉 8 次样式写入）
             if (_dragLastFrom !== from || _dragLastTo !== to) {
-                cards.forEach((c, i) => { if (i !== from && i !== to) c.style.opacity = ''; });
+                cards.forEach((c, i) => { if (i !== from && i !== to) { c.style.opacity = ''; c.style.willChange = ''; } });
+                // 提层只给这两张卡 + 这两组文字：原先写在 CSS 里靠 .dragging 批量命中，起手第一帧会白建
+                // 8 个全屏卡层 + 其余文字组层（实测合成层 22 → 38、面积 ×3.25），而它们整段拖动里根本没有样式变化。
+                clearTimeout(_entryWcTimer);
+                cards[from].style.willChange = 'opacity';
+                cards[to].style.willChange = 'opacity';
+                if (gf) gf.style.willChange = 'transform';
+                if (gt) gt.style.willChange = 'transform';
                 _dragLastFrom = from; _dragLastTo = to;
             }
-            cards[from].style.opacity = String(1 - p);
-            cards[to].style.opacity = String(p);
+            cards[from].style.opacity = String(1 - pp);
+            cards[to].style.opacity = String(pp);
             // 两组文字**整屏**反向对滑（对齐 EplayerX），**不做淡化**（纯横移）：
             //   向左划（dir=1）：当前组左移出边界、目标组从右侧屏外进来；向右划镜像。
             //   位移 1:1 跟手（手指走多少、文字走多少），走满一屏 = 恰好移出/就位，与海报淡化同节奏。
-            const gf = _textGroupOfItem(_entryPosterItems[from]);
-            const gt = _textGroupOfItem(_entryPosterItems[to]);
             const sgn = dir > 0 ? -1 : 1;          // 当前组退出的方向
             _txGroup(gf, sgn * OPP * p);                     // 当前组：0 → ∓一屏（手指走多少跟多少）
             _txGroup(gt, -sgn * OPP * (1 - p));              // 目标组：±一屏 → 0（与当前组互补，正好从屏外进到居中）
@@ -4221,6 +4235,16 @@
             // 跟手残留的文字位移必须清除，否则会压住 CSS 默认无偏移状态而错位；可见性交回 _updateEntryCarousel 统一裁决
             const layer = _entryTextLayer();
             if (layer) [...layer.querySelectorAll('.entry-tg')].forEach(g => { g.style.transform = ''; g.style.opacity = ''; });
+            // 提层的内联 will-change **延迟**清：立刻清会在续滑（走 transition、浏览器自动提层）之前先降一次层，
+            // 白多一次层抖动。延迟取「文字滑移过渡时长 + 100ms」——过渡跑完再清最干净；延迟期内若又开始拖动，
+            // _dragEntryPoster 会 clearTimeout 接管。
+            const wcDur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--entry-switch-dur')) || 0.6;
+            clearTimeout(_entryWcTimer);
+            _entryWcTimer = setTimeout(() => {
+                _entryCards().forEach(c => { c.style.willChange = ''; });
+                const l = _entryTextLayer();
+                if (l) [...l.querySelectorAll('.entry-tg')].forEach(g => { g.style.willChange = ''; });
+            }, wcDur * 1000 + 100);
             if (applied) return;   // 调用方随后会走 _setEntryPoster 切好索引与类名
             // 未过阈值时索引不变，但内联 opacity 已清、.active 未重算，需显式刷新让当前卡回到 opacity:1
             _updateEntryCarousel();
@@ -4273,9 +4297,10 @@
                 const flung = !passed && dist >= ENTRY_FLING_MIN
                     && dist / Math.max(1, performance.now() - t.t0) >= ENTRY_FLING_SPEED;
                 const applied = passed || flung;
-                // 快扫时文字只走了一部分，先记下两组当前位置；切索引后从那里续滑到终点（否则会瞬移一大截）
+                // 松手时两组文字都只走了一部分，先记下当前位置；切索引后从那里续滑到终点（否则会瞬移一大截，
+                // 退出组还会被 _endEntryDrag 清掉内联样式 —— 表现为「旧文字啪一下消失」再反向回中）
                 let resume = null;
-                if (flung) {
+                if (applied) {
                     const OPP = window.innerWidth || 375, sgn = d.dir > 0 ? -1 : 1;
                     const n = _entryPosterItems.length;
                     const gf = _textGroupOfItem(_entryPosterItems[d.from]);
