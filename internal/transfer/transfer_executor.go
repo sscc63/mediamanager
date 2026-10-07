@@ -622,9 +622,12 @@ func (e *TransferExecutor) TransferResolved(ctx context.Context, fileID, fileNam
 		newBasename = newBasename + oldExt
 	}
 	dirParts := parts[:len(parts)-1]
-	// 重命名目标统一转义非法字符（123 云盘禁止半角冒号等，实测含 : 的 rename 会静默失败），
+	// 目标路径各级统一转义非法字符（123 云盘禁止半角冒号等，实测含 : 的 rename 会静默失败），
 	// 并同步重建目标相对路径：保证 rename / findTargetFileID / 整理历史 / 联动 STRM 匹配
 	// 使用的文件名与网盘实际文件名完全一致
+	for i := range dirParts {
+		dirParts[i] = pan123.EscapeFileName(dirParts[i])
+	}
 	targetRelPath = strings.Join(append(append([]string{}, dirParts...), newBasename), "/")
 
 	// 9. 递归创建目录
