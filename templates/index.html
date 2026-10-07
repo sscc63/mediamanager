@@ -84,7 +84,7 @@
             text-rendering: optimizeLegibility;
             letter-spacing: 0.005em;
         }
-        /* 英雄底基础层：移动/桌面两份逐字节相同的拷贝合并为一条；移动端「超大模糊摊平」覆盖块保留在下方 @max768 */
+        /* 英雄底基础层：桌面与移动共用同一套参数（原移动端「超大模糊摊平」覆盖块已合并至此） */
         body::before {
             content: "";
             position: fixed;
@@ -101,12 +101,10 @@
             background-color: #0c0c10;
             background-image: var(--hero-bg, none);
             background-size: cover, cover;
-            background-position: center top;
+            background-position: center;
             background-repeat: no-repeat;
-            filter: blur(8.5px) saturate(1.05);
-            opacity: .35;
-            -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
-            mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 94%);
+            filter: blur(14px) saturate(1.15);
+            opacity: 1;
             transform: scale(4);
             transform-origin: 0 0;
         }
@@ -629,7 +627,6 @@
             .top-toolbar {
                 position: sticky;
                 top: 0;
-                z-index: 40;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
@@ -1411,7 +1408,6 @@
             .top-toolbar {
                 position: sticky;
                 top: 0;
-                z-index: 40;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
@@ -1444,17 +1440,6 @@
             .trend-rank-track { margin: 0 -16px; padding: 8px 16px 5px; }
             .card { padding: 16px; }
             /* 移动端：订阅海报改为顶栏下方、竖向 2:3 纯海报；出血方式与之前一致（全宽出血铺满、无圆角、cover 裁切） */
-            body::before {
-                background-color: #0c0c10;
-                background-image: var(--hero-bg, none);
-                background-size: cover, cover;
-                background-position: center;
-                background-repeat: no-repeat;
-                filter: blur(14px) saturate(1.15);
-                opacity: 1;
-                -webkit-mask-image: none;
-                mask-image: none;
-            }
             #tab-system .tmdb-entry-card.card {
                 margin-left: -16px;                /* 保留横向出血：海报延伸到屏幕左右边缘 */
                 margin-right: -16px;
