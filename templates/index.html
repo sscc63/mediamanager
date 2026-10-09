@@ -3753,8 +3753,10 @@
         function _entryImgSrc(i) {
             return `https://image.tmdb.org/t/p/w1280${i.backdrop_path || i.poster_path}`;
         }
-        // 底图只做 34px 模糊的背景，源分辨率无意义 → 用最小档（w300，底图档位里最小），解码≈瞬间
+        // 底图只做模糊背景，源分辨率无意义（该层是 1/4 尺寸再 scale(4)，移动端实际只需 ~132×246 源像素）。
+        // 桌面：backdrop 最小档 w300；移动端出血海报是竖版无字海报 → 底图同走竖版 w92 保色调一致（ΔE 23.7→10.5）。
         function _entryBgSrc(i) {
+            if (_isMobile()) return `https://image.tmdb.org/t/p/w92${(i._detail && i._detail.textless) || i.poster_path || i.backdrop_path}`;
             return `https://image.tmdb.org/t/p/w300${i.backdrop_path || i.poster_path}`;
         }
         // 大图预解码：解码完再挂 DOM，否则换图那 200~400ms 露白底 = 闪白。
@@ -3924,12 +3926,11 @@
             const url = r.textless
                 ? `https://image.tmdb.org/t/p/original${r.textless}`
                 : `https://image.tmdb.org/t/p/original${item.poster_path || item.backdrop_path || ''}`;
-            const wasEmpty = !posterImg.currentSrc || !posterImg.getAttribute('src');
             item._heroPosterUrl = url;
             _preheat(url, () => {
                 if (!posterImg.isConnected) return;
                 posterImg.src = url;
-                if (wasEmpty) return;
+                // 底图与卡片同源（手机端走 textless），detail 到达后必须刷新 —— 首帧只能用列表里就有的 poster_path 占位
                 if (_entryPosterItems[_entryPosterIdx] === item) _updateHeroBg(_entryBgSrc(item));
             });
         }
