@@ -3923,9 +3923,11 @@
             const posterImg = card && card.querySelector('img:not(.entry-brand)');
             if (!posterImg || !posterImg.isConnected) return;
             if (!_entryNearItems().includes(item)) return;   // 不在邻近窗口内：别为它解码大图，切到时再填
+            // 档位 original → w1280（10-10 实测：1131KB→507KB、解码 22.1MB→9.4MB；手机端这块海报只有 390 CSS px 宽，
+            // 按 dpr2=780 / dpr3=1170 设备像素的真实显示尺寸逐像素比，平均每通道差 0.8~2.1%、放大 20 倍的差异图只有 JPEG 噪声、无边缘丢失）
             const url = r.textless
-                ? `https://image.tmdb.org/t/p/original${r.textless}`
-                : `https://image.tmdb.org/t/p/original${item.poster_path || item.backdrop_path || ''}`;
+                ? `https://image.tmdb.org/t/p/w1280${r.textless}`
+                : `https://image.tmdb.org/t/p/w1280${item.poster_path || item.backdrop_path || ''}`;
             item._heroPosterUrl = url;
             _preheat(url, () => {
                 if (!posterImg.isConnected) return;
