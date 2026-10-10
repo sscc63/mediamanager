@@ -3945,7 +3945,7 @@
             const metaEl = g.querySelector('.entry-meta');
             const overviewEl = g.querySelector('.entry-overview');
             if (r && r.logo) {
-                const url = `https://image.tmdb.org/t/p/w1280${r.logo}`;
+                const url = `https://image.tmdb.org/t/p/w780${r.logo}`;
                 if (brand.dataset.logoUrl !== url) {
                     brand.dataset.logoUrl = url;
                     _preheat(url, () => { if (brand.isConnected) brand.src = url; });
