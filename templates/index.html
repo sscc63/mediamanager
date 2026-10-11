@@ -815,7 +815,7 @@
             text-align: center;
         }
         #tab-system .entry-text > .entry-tg > .entry-meta {
-            bottom: 34px;
+            bottom: 32px;
             font-size: 12.5px;
             font-weight: 500;
             letter-spacing: .06em;
@@ -823,8 +823,8 @@
             text-shadow: 0 1px 6px rgba(0,0,0,.75);
         }
         #tab-system .entry-text > .entry-tg > .entry-overview { display: none; }
-        /* 海报切换指示器：八点滑动窗口。absolute 悬浮在「简介底边」与「海报底边」之间的空档里
-           （桌面 overview bottom:34、移动 bottom:18），不占布局流，也不改动 brand/meta/overview 任何定位值。
+        /* 海报切换指示器：八点滑动窗口。absolute 悬浮在「年份行底边」与「海报底边」之间的空档里，
+           不占布局流，也不改动 brand/meta 任何定位值。
            贴底放（2px/6px）：海报底部是 mask 渐变淡出区（92%→100% 透明）且整页 hero 背景向下延伸，
            视觉上的海报底边比容器底更低，圆点跟着往下才是「看着在中间」。 */
         #tab-system .entry-dots {
@@ -1468,7 +1468,7 @@
                 position: absolute;
                 left: 20px; right: 20px;
                 width: auto;            /* 覆掉桌面的 min(88%,760px)：移动端由 left/right 夹出宽度，否则宽度溢出视口 */
-                bottom: 18px;
+                bottom: 16px;
                 transform: none;
                 margin: 0;
                 text-align: center;
