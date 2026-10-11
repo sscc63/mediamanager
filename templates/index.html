@@ -1434,6 +1434,7 @@
                 margin-left: -16px;                /* 保留横向出血：海报延伸到屏幕左右边缘 */
                 margin-right: -16px;
                 margin-top: 0;   /* 透明状态栏下内容延伸至屏幕顶：无需避让/上推 safe-area，避免顶部多留一个状态栏空档 */
+                margin-bottom: 5vw;   /* 海报 2/3.1→2/3 后容器矮 5vw，补回等量下边距：榜单零位移，文字层随海报走 */
                 padding: 0;
                 border-radius: 0;
                 background: transparent;
@@ -1444,7 +1445,7 @@
                 position: relative;                /* .entry-card absolute 的锚点 */
                 width: 100%;
                 flex: none;                        /* 停用基础规则的 flex:1，让 aspect-ratio 独掌高度，避免 cover 裁到顶部 */
-                aspect-ratio: 2 / 3.1;             /* 竖向纯海报 */
+                aspect-ratio: 2 / 3;               /* 竖向纯海报 */
                 min-height: 0;
                 padding: 0;
                 border-radius: 0;                  /* 与之前一致：全宽出血无圆角 */
