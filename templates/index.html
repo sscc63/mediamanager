@@ -830,7 +830,7 @@
         #tab-system .entry-dots {
             position: absolute;
             left: 50%;
-            bottom: -20px;   /* 负值 = 探出 .entry-poster 底边（容器 overflow:visible），落到海报渐隐区下方的出血段 */
+            bottom: -22px;   /* 负值 = 探出 .entry-poster 底边（容器 overflow:visible），落到海报渐隐区下方的出血段 */
             transform: translateX(-50%);
             z-index: 3;
             display: flex;
@@ -1460,16 +1460,16 @@
             }
             /* 移动端是竖向出血海报，版式与桌面满屏不同，尺寸独立定义（勿与桌面共用） */
             #tab-system .entry-text > .entry-tg > img.entry-brand {
-                width: min(80%, 336px);
+                width: min(80%, 340px);
                 height: auto;
                 max-height: 118px;
-                bottom: 36px;
+                bottom: 34px;
             }
             #tab-system .entry-text > .entry-tg > .entry-meta {
                 position: absolute;
                 left: 20px; right: 20px;
                 width: auto;            /* 覆掉桌面的 min(88%,760px)：移动端由 left/right 夹出宽度，否则宽度溢出视口 */
-                bottom: 6px;
+                bottom: 4px;
                 transform: none;
                 margin: 0;
                 text-align: center;
