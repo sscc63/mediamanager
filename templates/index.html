@@ -1453,9 +1453,8 @@
                 box-shadow: none;
             }
             #tab-system .entry-carousel { width: 100%; height: 100%; min-height: 0; }
-            /* 手机端海报没有 mask（桌面靠 mask 常驻合成层）⇒ 过渡一结束临时层被撤、重栅格吸附 = 下坠 1px；给当前海报卡与当前文字组都常驻合成层 */
+            /* 手机端海报没有 mask（桌面靠 mask 常驻合成层）⇒ opacity 过渡一结束临时层被撤、大图重栅格吸附 = 下坠 1px；给当前这张常驻层 */
             #tab-system .entry-carousel .entry-card.active { will-change: opacity; }
-            #tab-system .entry-text > .entry-tg.on { will-change: transform; }
             #tab-system .entry-card > img:not(.entry-brand) {
                 -webkit-mask-image: none;
                 mask-image: none;
@@ -3960,6 +3959,9 @@
             });
             _ensureEntryDetail(_entryPosterIdx);
             _ensureEntryDetail(_entryPosterIdx + 1);   // 预取下一张，滑动时即时可见
+            // 反向邻居也要预取：否则往回滑时该条的 logo 位图在过渡之后才写 src ⇒ 文字层重画一次，
+            // 在非整数有效倍率（iOS 页面缩放 85% ⇒ 3×0.85=2.55）下会吸附到相邻设备像素格 = 1px 跳动
+            _ensureEntryDetail((_entryPosterIdx - 1 + _entryPosterItems.length) % _entryPosterItems.length);
             if (item) _updateHeroBg(_entryBgSrc(item));
         }
         // 读文字组当前的实际位移（内联值可能是 ''，必须走计算样式）
@@ -4124,7 +4126,6 @@
                 g.style.opacity = g.dataset.key === key ? '' : '0';
                 g.style.transform = '';          // 清跟手/滑入残留位移
                 g.style.pointerEvents = 'none';
-                g.classList.toggle('on', g.dataset.key === key);   // 当前组标记 .on → 常驻合成层（同海报卡，防过渡后撤层重栅格）
             });
             // 裁剪：非当前组不参与渲染
             _pruneTextGroups();
