@@ -290,6 +290,8 @@
         .tab-panel { display: none; animation: fadeIn 0.28s ease; }
         .tab-panel.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        /* 首页不建合成层：fadeIn 动画结束撤销层时会有 1px 栅格吸附（真机返回首页顶部露缝→整块上移） */
+        #tab-system { animation: none; }
 
         /* ============ 卡片（克制的平板面层） ============ */
         .card {
