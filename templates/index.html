@@ -1466,6 +1466,8 @@
                 height: auto;
                 max-height: 118px;
                 bottom: 34px;
+                /* 非整数有效倍率（iOS 页面缩放 85%⇒2.55）下撤层重栅格会吸附出 1px：logo 常驻层 + 下方滑移量吸附到整数设备像素 */
+                transform: translateX(-50%) translateZ(0);
             }
             #tab-system .entry-text > .entry-tg > .entry-meta {
                 position: absolute;
@@ -3982,10 +3984,21 @@
         // 非跟手切换（点圆点/自动）：当前条文字组**从右侧屏外整屏滑入**到位，无淡化——对齐 EplayerX。
         // 位移写在**该条自己的 .entry-tg 组**上（纯 px），与三行各自的居中 transform 解耦。
         // fromTx：快扫续滑时传「已经走到哪了」，从那里滑到 0；不传则从屏外整屏滑入。
+        function _entryPxScale() {
+            const dpr = window.devicePixelRatio || 1;
+            const vv = window.visualViewport;
+            const s = dpr * ((vv && vv.scale) ? vv.scale : 1);
+            return (isFinite(s) && s > 0) ? s : 1;
+        }
+        function _entrySnapPx(n) {
+            const s = _entryPxScale();
+            return Math.round(n * s) / s;
+        }
         function _slideEntryText(item, fromTx) {
             const g = _textGroupOfItem(item || _entryPosterItems[_entryPosterIdx]);
             if (!g) return;
-            _resumeSlide(g, fromTx != null ? fromTx : (window.innerWidth || 375), 0);
+            const from = fromTx != null ? fromTx : (window.innerWidth || 375);
+            _resumeSlide(g, _entrySnapPx(from), 0);
         }
         function _updateHeroBg(src) {
             const nextBg = `url("${src}")`;
