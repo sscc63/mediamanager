@@ -1793,7 +1793,7 @@
         .history-retry-ok:hover { transform: translateY(-1px); }
         .history-retry-ok:disabled { opacity: .5; cursor: not-allowed; transform: none; }
         @media (max-width: 768px) { .tmdb-modal.history-retry-modal { padding: 24px 20px 20px; } }
-        .emby-modal { max-width: 935px; }
+        .emby-modal { max-width: 935px; color: var(--text-700); }   /* 必须显式补 color：body 是 #fff，而 .tmdb-modal 只有白底没重置字色，裸文本会白纸白字 */
         .emby-modal .card { box-shadow: none; margin-bottom: 0; border: none; }
         .emby-dup-actions {
             display: flex;
@@ -1801,6 +1801,12 @@
             align-items: center;
             padding: 20px 0;
         }
+        /* 查重结果表格瘦身：只作用于查重弹窗，不影响「整理历史」的 .history-table */
+        #emby-dup-result .history-table tbody td { padding: 5px 8px; }
+        .emby-dup-name { font-size: 11px; color: var(--text-700); line-height: 1.4; overflow-wrap: anywhere; }
+        .emby-dup-ver { font-size: 10px; color: var(--text-400); }
+        .emby-dup-size { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        #emby-dup-result .history-table input[type="checkbox"] { accent-color: var(--danger); }   /* 勾选=待删，用红而非主色 */
         .tmdb-modal-hero {
             width: 100%;
             background: #0F172A;
@@ -2098,9 +2104,9 @@
                 </button>
                 <!-- 当前位置（工具栏居中） -->
                 <span class="toolbar-title" id="toolbarTitle"></span>
-                <!-- 后台（默认态）：服务器描边图标，点击进入后台任务页 -->
+                <!-- 后台（默认态）：横向三点图标，点击进入后台任务页 -->
                 <button class="toolbar-icon-btn logs-btn mode-default-right" onclick="switchTab('bg')" aria-label="后台">
-                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.932" stroke-linecap="round" stroke-linejoin="round"><path d="M0.966 3.763m0 3.051a3.051 3.051 0 0 1 3.051 -3.051h15.966a3.051 3.051 0 0 1 3.051 3.051v2.136a3.051 3.051 0 0 1 -3.051 3.051h-15.966a3.051 3.051 0 0 1 -3.051 -3.051z"/><path d="M0.966 12m0 3.051a3.051 3.051 0 0 1 3.051 -3.051h15.966a3.051 3.051 0 0 1 3.051 3.051v2.136a3.051 3.051 0 0 1 -3.051 3.051h-15.966a3.051 3.051 0 0 1 -3.051 -3.051z"/><path d="M5.847 7.881l0 .01"/><path d="M5.847 16.118l0 .01"/></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.932" stroke-linecap="round" stroke-linejoin="round"><circle cx="2.7" cy="12" r="2.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2.7" fill="currentColor" stroke="none"/><circle cx="21.3" cy="12" r="2.7" fill="currentColor" stroke="none"/></svg>
                 </button>
                 <!-- 保存（编辑态） -->
                 <button class="toolbar-icon-btn save-btn mode-edit-right" onclick="saveTopConfig()" aria-label="保存配置">
@@ -6237,7 +6243,7 @@
                 totalGroups += glist.length;
                 totalRedundant += libRedundant;
                 html += `<div style="margin-bottom: 12px;">
-                    <div style="font-weight: 600; margin-bottom: 7px;">${lib} <span class="chip chip-warn">${glist.length} 组重复</span> <span class="chip chip-err">可释放 ${fmtSize(libRedundant)}</span></div>`;
+                    <div style="font-weight: 600; margin-bottom: 7px;">${lib}</div>`;
                 glist.forEach(g => {
                     // 默认保留决策：启用「杜比视界优先」且组内有 DV → 保留 DV 中体积最大的，否则保留体积最大的
                     const dvIdx = g.files.map((f, i) => i).filter(i => g.files[i].dv);
@@ -6251,17 +6257,16 @@
                     html += `<details open style="border: 1px solid var(--border); border-radius: 7px; padding: 9px; margin-bottom: 7px;">
                         <summary style="cursor: pointer; font-size: var(--fs-subtitle); font-weight: 500; line-height: 1.35;">${g.label} · ${g.files.length} 个文件 · 可释放 ${fmtSize(g.redundant_size)}</summary>
                         <table class="history-table" style="margin-top: 7px;">
-                            <thead><tr><th style="width: 31px;"></th><th>名称</th><th>大小</th><th>版本信息</th><th>保留</th></tr></thead>
                             <tbody>`;
                     g.files.forEach((f, idx) => {
                         const isKeep = idx === keepIdx;
                         const checked = isKeep ? '' : 'checked';
+                        const tag = isKeep ? ' <span class="chip chip-ok">建议保留</span>' : (f.dv ? ' <span class="chip chip-warn">DV</span>' : '');
                         html += `<tr>
-                            <td><input type="checkbox" class="emby-file-cb" value="${f.id}" ${checked} onchange="updateEmbyDeleteBtn()"></td>
-                            <td>${f.name}</td>
-                            <td>${fmtSize(f.size)}</td>
-                            <td style="color: var(--text-400); font-size: 10px;">${f.info || '-'}</td>
-                            <td>${isKeep ? '<span class="chip chip-ok">建议保留</span>' : (f.dv ? '<span class="chip chip-warn">DV</span>' : '')}</td>
+                            <td style="width: 31px;"><input type="checkbox" class="emby-file-cb" value="${f.id}" ${checked} onchange="updateEmbyDeleteBtn()"></td>
+                            <td class="emby-dup-name">${f.name}${tag}</td>
+                            <td class="emby-dup-ver">${f.info || '-'}</td>
+                            <td class="emby-dup-size">${fmtSize(f.size)}</td>
                         </tr>`;
                     });
                     html += '</tbody></table></details>';
@@ -6291,6 +6296,8 @@
             const checked = [...document.querySelectorAll('#emby-dup-result .emby-file-cb:checked')].map(cb => cb.value);
             if (!checked.length) return;
             if (!confirm(`确定删除选中的 ${checked.length} 个文件？\n\n将删除：Emby 媒体库条目 + 本地 STRM 文件 + 123 网盘源文件（移入回收站）。\n此操作不可恢复！`)) return;
+            const btn = document.getElementById('emby-delete-btn');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>删除中...</span>'; }
             try {
                 const r = await api('/api/emby/delete', 'POST', { ids: checked });
                 let msg = `删除完成：成功 ${r.success || 0} 个`;
@@ -6302,6 +6309,7 @@
                 loadMediaStats();
             } catch (e) {
                 showNotification('删除失败: ' + e.message, 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-trash"></i> <span>删除选中 (' + checked.length + ')</span>'; }
             }
         }
 
