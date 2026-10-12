@@ -1963,27 +1963,6 @@
             border-top: 1px dashed var(--border);
             display: flex; flex-direction: column; gap: 5px;
         }
-        .tmdb-res-link { display: flex; align-items: center; gap: 6px; font-size: 10px; }
-        .tmdb-res-link-pan {
-            flex: 0 0 auto; padding: 1px 6px; border-radius: 849px;
-            background: var(--primary-light); color: var(--primary-hover);
-            font-size: 9px; font-weight: 600;
-        }
-        .tmdb-res-link-url {
-            flex: 1 1 auto; min-width: 0;
-            color: var(--primary-hover); text-decoration: none;
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-        }
-        .tmdb-res-link-url:hover { text-decoration: underline; }
-        .tmdb-res-copy {
-            flex: 0 0 auto;
-            display: inline-flex; align-items: center; gap: 3px;
-            padding: 3px 7px; border-radius: 5px;
-            background: transparent; border: 1px solid var(--border);
-            color: var(--text-400); cursor: pointer; font-size: 9px;
-            transition: color 0.18s, border-color 0.18s;
-        }
-        .tmdb-res-copy:hover { color: var(--primary-hover); border-color: var(--border-strong); }
         .tmdb-res-note {
             font-size: var(--fs-meta); color: var(--text-400);
             line-height: 1.6; padding: 5px 0;
@@ -3097,10 +3076,6 @@
 
         // ============ 统一加载指示器 ============
         // 样式写在静态 <style> 里（首屏「后台任务」也要用，运行时注入来不及）；按文案自动识别是因为占位文案散落在 12+ 处调用点
-        function _spinner(size) {
-            const s = size || 14;
-            return `<span class="_spin" style="width:${s}px;height:${s}px;border-width:${s >= 20 ? 3 : 2}px;"></span>`;
-        }
         // 判断是否为「加载中」类文案：中文「加载中」/ 英文 loading，兼容带省略号的各种写法
         function _isLoadingText(text) {
             const t = String(text == null ? '' : text).trim();
@@ -3108,21 +3083,20 @@
         }
         // 加载态只显示旋转图标（不跟文字），text 仅作 aria-label 供读屏播报
         function _loaderHtml(text, size) {
+            const s = size || 14;
             const label = String(text == null ? '' : text).trim() || '加载中';
-            return `<span style="display:inline-flex;align-items:center;" role="status" aria-label="${label}">${_spinner(size)}</span>`;
+            return `<span style="display:inline-flex;align-items:center;" role="status" aria-label="${label}">`
+                + `<span class="_spin" style="width:${s}px;height:${s}px;border-width:${s >= 20 ? 3 : 2}px;"></span></span>`;
         }
-
-        function _rankMsg(text) {
-            const inner = _isLoadingText(text) ? _loaderHtml('加载中') : text;
-            return `<div style="${_RANK_PLACEHOLDER}">${inner}</div>`;
+        // 占位块：文案为「加载中」类或空时显示旋转图标，否则原样显示文字
+        // 必须用 function 声明：_contentPlaceholder 在定义之前(L2835)就被调用，依赖函数提升
+        function _placeholder(text, style, size) {
+            const inner = (!text || _isLoadingText(text)) ? _loaderHtml('加载中', size) : text;
+            return `<div style="${style}">${inner}</div>`;
         }
+        function _rankMsg(text) { return _placeholder(text, _RANK_PLACEHOLDER, 14); }
         const _CONTENT_PLACEHOLDER_STYLE = 'color:#fff;padding:34px;text-align:center;';
-        function _contentPlaceholder(text) {
-            const inner = (text === '' || text === undefined || text === null || _isLoadingText(text))
-                ? _loaderHtml('加载中', 22)
-                : text;
-            return `<div style="${_CONTENT_PLACEHOLDER_STYLE}">${inner}</div>`;
-        }
+        function _contentPlaceholder(text) { return _placeholder(text, _CONTENT_PLACEHOLDER_STYLE, 22); }
 
         // loadedMap：按 trackId 记忆已加载；toPayload：把上游条目映射成 openTmdbDetail 需要的字段
         async function _loadRankTrack(trackId, loadedMap, url, toPayload) {
@@ -3217,8 +3191,7 @@
                         ? `<img class="poster" loading="lazy" src="${url}" alt="poster" onerror="this.remove()">`
                         : `<div style="width:100%;aspect-ratio:2/3;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#292a30,#3a3a42);color:#cfcfd6;font-size:9px;text-align:center;padding:5px;box-sizing:border-box;">${escapeHtml(it.title || '')}</div>`;
                     return `<div class="trend-rank-item" data-payload="${payload}" data-target-url="${escapeHtml(it.target_url || '')}"
-                        onclick="chRankClick(event,this)" oncontextmenu="event.preventDefault();channelLongMenu(this,event.clientX,event.clientY)"
-                        ontouchstart="channelTouchStart(event,this)" ontouchmove="channelTouchMove(event)" ontouchend="channelTouchEnd(event,this)">
+                        onclick="chRankClick(event,this)">
                         ${body}
                     </div>`;
                 }).join('');
@@ -3227,7 +3200,6 @@
             }
         }
         function chRankClick(ev, el) {
-            if (_chLonged) { _chLonged = false; ev.stopPropagation(); return; }
             openTrendRankItem(el);
         }
         function gotoChannelUpdates() {
@@ -3253,15 +3225,12 @@
                 content.innerHTML = _contentPlaceholder('频道更新加载失败');
             }
         }
-        // ============ 频道更新卡片：支持长按（或鼠标右键）弹出「立即入库」菜单 ============
-        let _chPressTimer = null, _chLongResetTimer = null, _chPT = 0, _chPX = 0, _chPY = 0, _chLonged = false;
         let _channelTargetURL = '';
         function channelCardHtml(it) {
             const url = it.poster_path ? `https://image.tmdb.org/t/p/w342${it.poster_path}` : '';
             const target = it.target_url || '';
             return `<div class="tmdb-card" data-title="${escapeHtml(it.title || '')}" data-id="${escapeHtml(it.tmdb_id || 0)}" data-type="${escapeHtml(it.media_type || 'movie')}" data-target-url="${escapeHtml(target)}"
-                onclick="channelCardClick(event,this)" oncontextmenu="event.preventDefault();channelLongMenu(this,event.clientX,event.clientY)"
-                ontouchstart="channelTouchStart(event,this)" ontouchmove="channelTouchMove(event)" ontouchend="channelTouchEnd(event,this)">
+                onclick="channelCardClick(event,this)">
                 <div class="tmdb-poster">
                     ${url ? `<img src="${url}" alt="${escapeHtml(it.title || '')}" loading="lazy" onerror="this.remove()">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-400);font-size:10px;">暂无海报</div>'}
                 </div>
@@ -3269,32 +3238,7 @@
             </div>`;
         }
         function channelCardClick(ev, cd) {
-            if (_chLonged) { _chLonged = false; ev.stopPropagation(); return; }
             openTmdbDetailFromCard(cd);
-        }
-        function channelTouchStart(ev, cd) {
-            const t = ev.touches[0];
-            _chPT = Date.now(); _chPX = t.clientX; _chPY = t.clientY; _chLonged = false;
-            clearTimeout(_chPressTimer);
-            _chPressTimer = setTimeout(() => { channelLongMenu(cd, _chPX, _chPY); }, 500);
-        }
-        function channelTouchMove(ev) {
-            const t = ev.touches[0];
-            if (Math.abs(t.clientX - _chPX) + Math.abs(t.clientY - _chPY) > 12) { clearTimeout(_chPressTimer); _chPressTimer = null; }
-        }
-        function channelTouchEnd(ev, cd) { clearTimeout(_chPressTimer); _chPressTimer = null; }
-        function channelLongMenu(cd, x, y) {
-            _chLonged = true;
-            clearTimeout(_chLongResetTimer);
-            _chLongResetTimer = setTimeout(() => { _chLonged = false; }, 400);
-            const tgt = cd && cd.getAttribute ? cd.getAttribute('data-target-url') : '';
-            const m = document.getElementById('channelLongMenu');
-            if (!m) return;
-            m.dataset.url = tgt;
-            m.innerHTML = `<div class="chmenu-item${tgt ? '' : ' disabled'}" onclick="channelMenuTransfer(this)">${tgt ? '⚡ 立即入库' : '无 123 网盘链接'}</div>`;
-            m.style.display = 'block';
-            m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 8) + 'px';
-            m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 8) + 'px';
         }
         // 入库进行中标记：后端这条路径没有去重，连点会真的转存两份，必须自己拦住并立刻给反馈
         let _chTransferBusy = false;
@@ -3311,19 +3255,6 @@
               .catch(() => channelToast('入库失败，请查看 TG 通知'))
               .finally(() => { _chTransferBusy = false; });
         }
-        function channelMenuTransfer(el) {
-            const m = document.getElementById('channelLongMenu');
-            const url = m ? m.dataset.url : '';
-            hideChannelMenu();
-            _channelDoTransfer(url);
-        }
-        function hideChannelMenu() { const m = document.getElementById('channelLongMenu'); if (m) m.style.display = 'none'; }
-        // 菜单弹出后点页面别处 / 滚动都要关掉，否则会一直挂在屏幕上
-        document.addEventListener('click', function (e) {
-            const m = document.getElementById('channelLongMenu');
-            if (m && m.style.display === 'block' && !m.contains(e.target)) hideChannelMenu();
-        }, true);
-        window.addEventListener('scroll', hideChannelMenu, { passive: true });
         function channelDetailTransfer() { _channelDoTransfer(_channelTargetURL); }
         function channelToast(msg) {
             let t = document.getElementById('channelToast');
@@ -3504,8 +3435,6 @@
         // 站点机制：123panfx 是「回复后再查看」，点解锁后后端会以配置账号在该帖发一条预设回复，隐藏链接随即可见，同一帖 24h 内不重复。
         // 按钮 title 必须如实写明这点 —— 回帖是公开可见的写操作。
 
-        let _resItems = {};
-
         function resSearchBtnHtml(title, year) {
             const kw = (title || '').trim();
             if (!kw) return '';
@@ -3513,8 +3442,6 @@
         }
 
         function renderResBlock(title, year) {
-            // 每次进详情都是全新一块：清掉上一部片的条目缓存，避免解锁回填串到别的片
-            _resItems = {};
             const kw = (title || '').trim();
             if (!kw) return '';
             return `<div class="tmdb-res-block" id="tmdb-res-block" hidden>
@@ -3542,8 +3469,6 @@
                     list.innerHTML = `<div class="tmdb-res-note error">${escapeHtml(data.error || '搜索失败')}</div>`;
                     return;
                 }
-                _resItems = {};
-                (data.items || []).forEach(it => { _resItems[it.tid] = it; });
                 renderResList(list, data);
             } catch (e) {
                 list.innerHTML = `<div class="tmdb-res-note error">搜索失败：${escapeHtml(e.message || '请求失败')}</div>`;
@@ -3622,22 +3547,12 @@
                 if (r.links && r.links.length) {
                     box.hidden = false;
                     const how = r.replied ? '已在该帖回复，链接已解锁' : '链接已获取';
-                    const isPan123 = l => String(l.pan).trim().toLowerCase() === '123'
-                        || /(?:123pan|123865|123684|123912)\.[a-z]+\/(?:s|123pan)\//i.test(String(l.url || ''));
-                    const pan123 = r.links.filter(isPan123);
-                    const others = r.links.filter(l => !isPan123(l));
-                    let note = `<div class="tmdb-res-note">${how}</div>`;
-                    if (pan123.length) {
-                        pan123.forEach(l => autoTransferPanfx(l.url));
-                        note += `<div class="tmdb-res-note">${pan123.length} 个 123 网盘链接已自动提交入库，请留意 TG 通知</div>`;
-                    }
-                    if (others.length) {
-                        note += `<div class="tmdb-res-note">另有 ${others.length} 个非 123 网盘链接（夸克/115/其他），仅支持手动转存</div>`;
-                    }
-                    box.innerHTML = note + r.links.map(l => renderResLink(l)).join('');
+                    r.links.forEach(l => autoTransferPanfx(l.url));
+                    box.innerHTML = `<div class="tmdb-res-note">${how}</div>`
+                        + `<div class="tmdb-res-note">${r.links.length} 个 123 网盘链接已自动提交入库，请留意 TG 通知</div>`;
                     btn.className = 'tmdb-res-unlock done';
                     btn.innerHTML = '<i class="fas fa-lock-open"></i> 已解锁';
-                    // 保持 disabled：链接已经拿到，不需要也不应该再点一次
+                    // 保持 disabled：已提交入库，不需要也不应该再点一次
                     return;
                 }
                 const tip = r.message || '该资源需要在资源站查看';
@@ -3649,16 +3564,6 @@
                 btn.innerHTML = '<i class="fas fa-lock"></i> 解锁';
                 btn.disabled = false;
             }
-        }
-
-        function renderResLink(l) {
-            const pwd = l.pwd ? `<span class="tmdb-res-tag">提取码 ${escapeHtml(l.pwd)}</span>` : '';
-            return `<div class="tmdb-res-link">
-                <span class="tmdb-res-link-pan">${escapeHtml(l.pan || '网盘')}</span>
-                <a class="tmdb-res-link-url" href="${escapeHtml(l.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(l.url)}">${escapeHtml(l.url)}</a>
-                ${pwd}
-                <button class="tmdb-res-copy" onclick="copyResLink(this)" data-url="${escapeHtml(l.url)}${l.pwd ? ' 提取码 ' + escapeHtml(l.pwd) : ''}" title="复制链接"><i class="fas fa-copy"></i></button>
-            </div>`;
         }
 
         function showResMsg(box, html, kind) {
@@ -3674,27 +3579,6 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_url: url })
             }).catch(() => {});
-        }
-
-        function copyResLink(btn) {
-            const text = btn.dataset.url || '';
-            const done = () => { btn.innerHTML = '<i class="fas fa-check"></i>'; setTimeout(() => { btn.innerHTML = '<i class="fas fa-copy"></i>'; }, 1400); };
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
-                return;
-            }
-            fallbackCopy(text, done);
-        }
-
-        function fallbackCopy(text, done) {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
-            document.body.appendChild(ta);
-            ta.select();
-            try { document.execCommand('copy'); done(); } catch (e) { /* 复制失败静默：链接本身可见可手动选 */ }
-            ta.remove();
         }
 
         function escapeHtml(value) {
@@ -5935,12 +5819,13 @@
         async function loadEmbyUsage() {
             const body = document.getElementById('emby-usage-body');
             const btns = Array.from(document.querySelectorAll('.emby-usage-load-btn'));
-            if (!body) return;
-            btns.forEach(b => {
-                b.disabled = true;
-                b.style.color = 'var(--text-400)';
-                b.style.opacity = '0.6';
+            const setBtns = dis => btns.forEach(b => {
+                b.disabled = dis;
+                b.style.color = dis ? 'var(--text-400)' : '';
+                b.style.opacity = dis ? '0.6' : '';
             });
+            if (!body) return;
+            setBtns(true);
             body.innerHTML = '<div style="color: var(--text-400); padding: 10px 0;">正在获取观看数据...</div>';
             try {
                 const data = await api('/api/emby/usage?days=7' + (_embyUsage ? '&refresh=1' : ''));
@@ -5957,11 +5842,7 @@
             } catch (e) {
                 body.innerHTML = `<div class="empty-row">观看数据加载失败: ${escapeHtml(e.message)}</div>`;
             } finally {
-                btns.forEach(b => {
-                    b.disabled = false;
-                    b.style.color = '';
-                    b.style.opacity = '';
-                });
+                setBtns(false);
             }
         }
 
@@ -5993,15 +5874,8 @@
             const mobile = window.matchMedia('(max-width: 768px)').matches;
             const W = mobile ? 460 : 800;
             let H = mobile ? 250 : 220;
-            const cardBody = body;
-            if (!mobile && cardBody) {
-                const card = cardBody.closest('.card');
-                if (card) {
-                    const cardH = card.clientHeight;
-                    const avail = Math.max(220, cardH - 80);
-                    H = Math.min(360, avail);
-                }
-            }
+            const card = mobile ? null : body.closest('.card');
+            if (card) H = Math.min(360, Math.max(220, card.clientHeight - 80));
             const ML = 44, MR = 12, MT = 10, MB = 26;
             const pw = W - ML - MR, ph = H - MT - MB;
             let maxV = 0;
@@ -6029,10 +5903,8 @@
             users.forEach((u, ui) => {
                 const c = colors[ui % colors.length];
                 const pts = (u.durations || []).map((v, i) => [xAt(i), yAt(v || 0)]);
-                const dPath = _smoothPath(pts);
-                lines += `<path d="${dPath}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-                const coords = (u.durations || []).map((v, i) => `${xAt(i)},${yAt(v || 0)}`);
-                lines += `<polyline points="${coords.join(' ')}" fill="none" stroke="transparent" stroke-width="14" cursor="pointer" style="cursor:pointer;"
+                lines += `<path d="${_smoothPath(pts)}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+                lines += `<polyline points="${pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="transparent" stroke-width="14" cursor="pointer" style="cursor:pointer;"
                     data-uid="${escapeHtml(u.id)}" data-uname="${escapeHtml(u.name)}" data-xs="${days.map((_, i) => xAt(i)).join(',')}"
                     onclick="embyLinePoint(event, this)"/>`;
                 (u.durations || []).forEach((v, i) => {
@@ -6090,7 +5962,6 @@
             const body = overlay.querySelector('.tmdb-modal-body');
             try {
                 const data = await api(`/api/emby/usage/detail?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}`);
-                const body = overlay.querySelector('.tmdb-modal-body');
                 if (!data.configured) {
                     body.innerHTML = '<div style="color: var(--text-400);">未配置 Emby 服务器</div>';
                     return;
@@ -6313,31 +6184,6 @@
             }
         }
 
-        // ============ 全局手指滑动：切换「系统 / 后台」页 ============
-        // 滑动落在订阅探索海报卡上时只切海报；弹层/抽屉打开，或处于设置子页/日志页时不响应
-        function bindPageSwipe() {
-            let sx = 0, sy = 0, se = null;
-            document.addEventListener('touchstart', (e) => {
-                const t = e.touches && e.touches[0];
-                const overlays = document.querySelectorAll('.tmdb-modal-overlay, .modal-overlay, #drawer.open');
-                const blocked = overlays.length > 0;
-                if (blocked || !t) { sx = 0; return; }
-                sx = t.clientX; sy = t.clientY; se = e.target;
-            }, { passive: true });
-            document.addEventListener('touchend', (e) => {
-                if (!sx) return;
-                const c = e.changedTouches && e.changedTouches[0];
-                if (!c) return;
-                const dx = c.clientX - sx, dy = c.clientY - sy;
-                sx = 0;
-                if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy) * 1.3) return;
-                if (se && se.closest && (se.closest('#tmdb-poster') || se.closest('.tmdb-entry-card'))) return;
-                const cur = document.querySelector('.tab-panel.active')?.id;
-                if (cur === 'system') switchTab(dx < 0 ? 'bg' : 'system');   // 首页左右滑切后台/回首页
-                else if (cur === 'bg') switchTab(dx > 0 ? 'system' : 'bg');  // 后台右滑切回首页、左滑回后台
-            }, { passive: true });
-        }
-
         function bindLogsSwipeBack() {
             if (window.matchMedia('(min-width: 769px)').matches) return; // 仅手机端
             const logs = document.getElementById('tab-logs');
@@ -6372,18 +6218,9 @@
                 if (saved === 'media' || saved === 'history') setSearchScope(saved);
             } catch (e) {}
             loadTmdb(false, true);  // 静默预取榜单，填充订阅探索入口海报
-            bindPageSwipe();
             bindLogsSwipeBack();
             switchTab(initialTab);
         })();
     </script>
-
-<!-- 频道更新卡片长按菜单 -->
-<div id="channelLongMenu" style="display:none;position:fixed;z-index:99998;min-width:102px;background:rgba(28,28,32,.92);backdrop-filter:blur(9px);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:5px;box-shadow:0 7px 20px rgba(0,0,0,.35);"></div>
-<style>
-    #channelLongMenu .chmenu-item{color:#fff;font-size:12px;padding:8px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;}
-    #channelLongMenu .chmenu-item:active{background:rgba(255,255,255,.12);}
-    #channelLongMenu .chmenu-item.disabled{color:var(--text-500);pointer-events:none;}
-</style>
 
 </body></html>
