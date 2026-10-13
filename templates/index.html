@@ -1865,6 +1865,7 @@
             color: #52525b;                 /* zinc-600 深灰字 */
             border: 1px solid #18181b;      /* 黑色细描边 */
             box-shadow: none;
+            backdrop-filter: none;          /* 背后是纯白卡，模糊本无视觉效果；不关会在 tab-panel fadeIn 期间渲染成白背板（白闪） */
         }
         .tmdb-modal-subscribe.tmdb-modal-import:hover { background: rgba(24, 26, 32, 0.05); color: #3f3f46; }
         .tmdb-modal-subscribe.tmdb-modal-import:active { transform: scale(0.97); }
@@ -2714,6 +2715,7 @@
                 stopUsagePolling();
                 stopHistoryPolling();
             }
+            _entryAutoplayStart();   // 首页出血海报自动轮播：切走即停、切回重新起表（非首页时内部直接返回）
             if (tab === 'transfer' && !window._transferLoaded) {
                 window._transferLoaded = true;
                 loadTransferConfig();
@@ -3763,6 +3765,7 @@
             _entryPosterIdx = 0;
             _updateEntryCarousel();   // 顺带按「当前 ±1」窗口填海报：非窗口的卡不持有大图
             _bindEntrySwipe(strip);
+            _entryAutoplayStart();
         }
         // 详情 Promise 按条目缓存：不缓存就每敲一个字符重拉 10 次接口。
         // 拿到数据后：无字海报写回该条目自己的卡，文字写进该条目自己的文字组
@@ -3950,6 +3953,7 @@
             _entryPosterIdx = (index + _entryPosterItems.length) % _entryPosterItems.length;
             // 跟手切换（fromDrag）时文字已随手指到位，不能再播滑入，否则会二次跳动
             _updateEntryCarousel(!fromDrag);
+            _entryAutoplayStart();
         }
         function openHeroEntryDetail() {
             const item = _entryPosterItems[_entryPosterIdx];
@@ -4202,6 +4206,19 @@
             strip.addEventListener('touchcancel', finish, { passive: true });
         }
 
+        // 首页出血海报自动轮播：每 5s 走一次「点圆点」那条路径（海报 + logo/年份文字层 + 底图三轴同步）。
+        // 用 setTimeout 链而非 setInterval：每次切完重新计时，手动操作也自然把 5s 往后推。
+        let _entryAutoTimer = 0;
+        function _entryAutoplayStart() {
+            clearTimeout(_entryAutoTimer);
+            // 少于 2 条 / 页面在后台 / 不在首页 ⇒ 不起表
+            if (_entryPosterItems.length < 2 || document.hidden || document.body.dataset.page !== 'system') return;
+            _entryAutoTimer = setTimeout(() => {
+                if (_entryPosterTouch) return _entryAutoplayStart();   // 手指还按着：让位给跟手
+                _setEntryPoster(_entryPosterIdx + 1);                  // 内部会重新计时
+            }, 5000);
+        }
+
         async function loadTmdb(force, silent) {
             if (silent) {
                 try {
@@ -4302,6 +4319,7 @@
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) _usageTimerStop();
             else if (_usagePollWanted) _usageTimerStart();
+            _entryAutoplayStart();   // 首页出血海报自动轮播：回前台续上（后台时内部直接返回）
         });
 
         // 保形平滑（monotone cubic Hermite）：切线按相邻割线限制，抑制过冲
