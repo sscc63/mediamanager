@@ -662,8 +662,6 @@
             #tab-system .entry-carousel { min-height: 100vh; }
             /* 桌面端去侧栏：内容区占满全宽（系统页海报铺满需要，但其他 Tab 不能跟着拉成扁纸条） */
             .content { max-width: none; }
-            /* 后台 Tab 单独限宽：4 张卡片不能跟着视口一起拉满，否则内部空旷比例失衡 */
-            body[data-page="bg"] .content { max-width: 1020px; margin: 0 auto; }
             body[data-page="bg"] #tab-bg {
                 display: grid;
                 grid-template-columns: 340px minmax(0, 1fr);
@@ -1395,6 +1393,11 @@
             box-shadow: 0 0 0 3px var(--primary-soft);
         }
         .form-group.span-2 { grid-column: span 2; }
+
+        /* 桌面端内容页统一 1100px 居中边界（首页海报、订阅网格需铺满，排除）；字段栅格统一两列 → 全站字段 ~500px。
+           无需 @media 包裹：移动端 .cfg-grid 在下方 768px 块内被覆盖为 1fr；1100px 在窄视口本就不生效。 */
+        body:not([data-page="system"]):not([data-page^="tmdb"]) .content > .tab-panel.active { max-width: 1100px; margin: 0 auto; }
+        .cfg-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
         /* ============ Responsive ============ */
         @media (max-width: 768px) {
