@@ -5893,10 +5893,11 @@
                 return;
             }
             const mobile = window.matchMedia('(max-width: 768px)').matches;
-            const W = mobile ? 460 : 800;
-            let H = mobile ? 250 : 220;
+            // 桌面端 viewBox 宽跟随容器实测宽：写死 800 会被缩到 37.5%，轴字 10px 实际只渲染 3.75px
+            const W = mobile ? 460 : Math.max(280, body.clientWidth || 800);
+            let H = mobile ? 250 : 150;
             const card = mobile ? null : body.closest('.card');
-            if (card) H = Math.min(360, Math.max(220, card.clientHeight - 80));
+            if (card) H = Math.min(420, Math.max(150, card.clientHeight - 80));
             const ML = 44, MR = 12, MT = 10, MB = 26;
             const pw = W - ML - MR, ph = H - MT - MB;
             let maxV = 0;
