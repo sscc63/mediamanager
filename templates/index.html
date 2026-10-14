@@ -1232,56 +1232,17 @@
             ._spin { animation-duration: 2s; }
         }
 
-        /* ============ 配置卡片网格（小卡片样式，浅蓝底色） ============ */
+        /* ============ 配置字段网格（卡片内字段的两列栅格） ============ */
         .cfg-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
             gap: 12px;
         }
-        .cfg-card {
-            background: var(--surface);
-            border: none;
-            box-shadow: inset 0 1px 0 var(--card-hi-light);
-            border-radius: var(--radius);
-            padding: 12px 14px;
-            display: flex;
-            flex-direction: column;
-            gap: 9px;
-            height: 100%;
-            transition: border-color 0.18s, box-shadow 0.18s, background 0.18s, transform 0.18s;
-        }
-        .cfg-card:hover {
-            background: var(--primary-light);
-            transform: translateY(-1px);
-        }
-        .cfg-card-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 7px;
-            flex-wrap: wrap;
-            min-height: 24px;
-        }
-        .cfg-card-label {
-            font-size: var(--fs-subtitle);
-            font-weight: 600;
-            color: var(--text-500);
-            letter-spacing: 0px;
-            flex: 1;
-            line-height: 1.4;
-            min-width: 0;
-            word-break: break-word;
-        }
-        .cfg-card-body {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            flex: 1;
-            justify-content: flex-end;
-        }
 
-        /* ============ 分组卡片（一卡多项） ============ */
-        .group-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; flex: 1; align-content: start; }
+        /* ============ 配置卡内字段（由 renderGroupField 输出） ============ */
+        /* 单列纵向排布：Key / Cookie / URL 这类长值需要整行宽度，两列会被截断 */
+        .group-grid { display: flex; flex-direction: column; gap: 10px; }
+        .group-grid .form-group { margin-bottom: 9px; }
         .group-field.span-2 { grid-column: span 2; }
         .group-label {
             display: flex;
@@ -1309,27 +1270,11 @@
             flex: 1;
             min-width: 0;
         }
-        .group-card .switch { display: flex; }
-        .group-card .cfg-card-head { margin-bottom: 2px; }
-        .group-card.single-col .group-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            flex: 1;
-            justify-content: flex-end;
-        }
 
         /* ============ 配置表单（悬浮卡片式输入框） ============ */
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
         .form-group { display: flex; flex-direction: column; gap: 7px; min-width: 0; margin-bottom: 14px; }
         .form-row > .form-group { margin-bottom: 0; }
-        .group-card .form-group { margin-bottom: 9px; }
-        .group-card .form-group > label {
-            font-size: var(--fs-label);
-            font-weight: 500;
-            color: var(--text-400);
-            letter-spacing: 0px;
-        }
         .form-group input::placeholder,
         .form-group textarea::placeholder {
             color: #A9B4C6;
@@ -1522,11 +1467,9 @@
             .card-title { font-size: 13px; line-height: 1.3; }
             .card-title .hint { font-size: 9px; }
             .card-float-title { font-size: 13px; left: 14px; }
-            .cfg-card-label { font-size: 11px; line-height: 1.35; }
             .group-label { font-size: 10px; line-height: 1.35; }
             .group-row-label,
-            .form-group > label,
-            .group-card .form-group > label { font-size: 10px; line-height: 1.4; }
+            .form-group > label { font-size: 10px; line-height: 1.4; }
             .info-callout .ic-title { font-size: 12px; }
             .tmdb-title { font-size: 12px; }
             .tmdb-modal-title { font-size: 17px; }
@@ -2024,18 +1967,13 @@
         /* ============ 全局卡片底色半透明：仅白色底 70%，卡片内文字/控件保持 100% 不透明 ============ */
         .card,
         .hero-search,
-        .loading-card,
-        .cfg-card {
+        .loading-card {
             background: rgba(255, 255, 255, 0.7);
-        }
-        .cfg-card:hover {
-            background: rgba(238, 242, 255, 0.7);
         }
         /* 浅底容器内把辅助文字档位提深：--text-400 在 75% 白底上仅 1.44:1，提到 --text-500 为 2.72:1；只在这些容器重定义，深色区不受影响 */
         .card,
         .hero-search,
-        .loading-card,
-        .cfg-card {
+        .loading-card {
             --text-400: var(--text-500);
         }
 
@@ -2276,12 +2214,8 @@
 
             <!-- ============ Tab 1: 用户配置 ============ -->
             <section class="tab-panel" id="tab-user">
-                <div class="card">
-                    <div class="card-title">
-                        账号与认证
-                    </div>
-                    <div id="env-section-用户配置"></div>
-                </div>
+                <!-- 4 张配置卡直接顶层排列（原「账号与认证」大卡已去掉）；渲染出来的就是 4 张 .card -->
+                <div id="env-section-用户配置"></div>
 
                 <!-- AI 大模型与 LitePan OAuth 并排：两者内容量相当，等宽两列 -->
                 <div class="cards-row cards-row-equal">
@@ -4570,10 +4504,10 @@
         const ENV_GROUPS = {
             '用户配置': [
                 { title: 'AI 大模型', keys: ['ENV_AI_ENABLED', 'ENV_AI_API_KEY', 'ENV_AI_BASE_URL', 'ENV_AI_MODEL', 'ENV_AI_DAILY_QUOTA'], separate: 'env-section-ai', rightToggle: 'ENV_AI_ENABLED' },
-                { title: '123 账号与密码', keys: ['ENV_123_CLIENT_ID', 'ENV_123_CLIENT_SECRET'], single: true },
-                { title: 'Telegram 通知', keys: ['ENV_TG_BOT_TOKEN', 'ENV_TG_ADMIN_USER_ID'], single: true },
-                { title: '影视资源（详情页「资源」解锁用）', keys: ['ENV_PANFX_COOKIE', 'ENV_PANFX_AUTO_REPLY', 'ENV_PANFX_REPLY_GAP'], single: true },
-                { title: '其他配置项', keys: ['ENV_KUAKE_COOKIE', 'ENV_TMDB_API_KEY'], single: true }
+                { title: '123云盘登陆', keys: ['ENV_123_CLIENT_ID', 'ENV_123_CLIENT_SECRET'] },
+                { title: 'Telegram 通知', keys: ['ENV_TG_BOT_TOKEN', 'ENV_TG_ADMIN_USER_ID'] },
+                { title: '影视资源（详情页「资源」解锁用）', keys: ['ENV_PANFX_COOKIE', 'ENV_PANFX_AUTO_REPLY', 'ENV_PANFX_REPLY_GAP'] },
+                { title: '其他配置项', keys: ['ENV_KUAKE_COOKIE', 'ENV_TMDB_API_KEY'] }
             ]
         };
         // 前端不再展示的配置项（功能仍保留，读 user.env）：ENV_PANFX_BASE 属高级项（站点域名换过一次），改 user.env 即可
@@ -4616,25 +4550,13 @@
             </div>`;
         }
 
+        // 未分组的散项：同样渲染成一张 .card，与 AI 大模型 / LitePan 卡同构
         function renderSingleCard(item, sectionName) {
             const m = _fieldMeta(item);
-            if (m.isBool) {
-                return `<div class="cfg-card">
-                    <div class="cfg-card-head">
-                        <div class="cfg-card-label">${m.label}</div>
-                    </div>
-                    <div class="cfg-card-body">
-                        ${_switchHtml(m, sectionName, item)}
-                    </div>
-                </div>`;
-            }
-            return `<div class="cfg-card">
-                <div class="cfg-card-head">
-                    <div class="cfg-card-label">${m.label}</div>
-                </div>
-                <div class="cfg-card-body">
-                    ${_inputHtml(m, sectionName)}
-                </div>
+            const body = m.isBool ? _switchHtml(m, sectionName, item) : _inputHtml(m, sectionName);
+            return `<div class="card">
+                <div class="card-title">${m.label}</div>
+                <div class="group-grid"><div class="group-field">${body}</div></div>
             </div>`;
         }
 
@@ -4693,12 +4615,10 @@
                 </label>`;
             }
 
-            const colClass = group.single ? ' group-card single-col' : ' group-card';
-            return `<div class="cfg-card${colClass}">
-                <div class="cfg-card-head">
-                    <div class="cfg-card-label">${group.title}</div>
-                    ${headRight}
-                </div>
+            const headRightHtml = headRight ? `<span class="hint">${headRight}</span>` : '';
+            // 与 AI 大模型 / LitePan 卡同构：.card + .card-title —— 样式全部来自既有规则，无需任何覆盖
+            return `<div class="card">
+                <div class="card-title">${group.title}${headRightHtml}</div>
                 <div class="group-grid">${fields.join('')}</div>
             </div>`;
         }
@@ -4735,7 +4655,8 @@
                 if (!usedKeys.has(item.key)) cards += renderSingleCard(item, sectionName);
             });
 
-            container.innerHTML = `<div class="cfg-grid">${cards}</div>`;
+            // 容器直接用 .cards-row：卡片的 margin/padding-bottom 与标题行距自动与 AI 大模型 / LitePan 那一行同款
+            container.innerHTML = `<div class="cards-row cards-row-equal">${cards}</div>`;
         }
 
         // 渲染到独立卡片的配置组（如 AI 大模型）
