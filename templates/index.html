@@ -5895,9 +5895,11 @@
             const mobile = window.matchMedia('(max-width: 768px)').matches;
             // 桌面端 viewBox 宽跟随容器实测宽：写死 800 会被缩到 37.5%，轴字 10px 实际只渲染 3.75px
             const W = mobile ? 460 : Math.max(280, body.clientWidth || 800);
-            let H = mobile ? 250 : 150;
+            // 桌面端目标卡高 210px：卡高 = 图表高 + 76（标题 + 图例 + 内边距）⇒ 图表高取 134
+            let H = mobile ? 250 : 134;
             const card = mobile ? null : body.closest('.card');
-            if (card) H = Math.min(420, Math.max(150, card.clientHeight - 80));
+            if (card) H = Math.min(420, Math.max(134, card.clientHeight - 80));
+            const FS = mobile ? 10 : 9; // 坐标轴字号（viewBox 已与渲染宽 1:1，故按实际 px 渲染）
             const ML = 44, MR = 12, MT = 10, MB = 26;
             const pw = W - ML - MR, ph = H - MT - MB;
             let maxV = 0;
@@ -5914,11 +5916,11 @@
                 const y = MT + ph * k / 4;
                 const v = maxV * (1 - k / 4);
                 grid += `<line x1="${ML}" y1="${y}" x2="${W - MR}" y2="${y}" stroke="var(--text-400)" stroke-opacity="0.15" stroke-width="1"/>`;
-                grid += `<text x="${ML - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--text-400)" style="font-variant-numeric:tabular-nums">${fmtDuration(v, 'short')}</text>`;
+                grid += `<text x="${ML - 6}" y="${y + 4}" text-anchor="end" font-size="${FS}" fill="var(--text-400)" style="font-variant-numeric:tabular-nums">${fmtDuration(v, 'short')}</text>`;
             }
             let xlabels = '';
             days.forEach((d, i) => {
-                xlabels += `<text x="${xAt(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--text-400)">${d.slice(5)}</text>`;
+                xlabels += `<text x="${xAt(i)}" y="${H - 8}" text-anchor="middle" font-size="${FS}" fill="var(--text-400)">${d.slice(5)}</text>`;
             });
 
             let lines = '', points = '';
