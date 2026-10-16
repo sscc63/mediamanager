@@ -2149,7 +2149,7 @@
                 <!-- 订阅探索（单张海报轮播） -->
                 <div class="cards-row">
                     <!-- 订阅探索（单张横向海报；圆点或左右滑动切换，点击海报打开详情） -->
-                    <div class="card tmdb-entry-card" onclick="openHeroEntryDetail()" role="button" title="点击打开详情">
+                    <div class="card tmdb-entry-card" onclick="openHeroEntryDetail()" role="button">
                         <div id="tmdb-poster" class="tmdb-entry-poster">
                         </div>
                     </div>
@@ -4159,7 +4159,7 @@
         async function loadTmdb(force, silent) {
             if (silent) {
                 try {
-                    const data = await fetchRankOnce('/api/tmdb?category=trending&type=movie&time_window=day');
+                    const data = await fetchRankOnce('/api/tmdb?category=trending&type=tv&time_window=day');
                     if (data && data.items && data.items.length) renderEntryPosters(data.items);
                 } catch (e) { /* 静默失败，入口保持为空 */ }
                 return;
