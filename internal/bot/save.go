@@ -111,7 +111,7 @@ func (b *Bot) saveFilesTo123(msg *tgbotapi.Message, commonPath string, files []F
 				parentID = id
 				continue
 			}
-			folderID, err := mkdirWithRetry(ctx, client, part, parentID)
+			folderID, err := mkdirWithRetry(ctx, client, pan123.EscapeFileName(part), parentID)
 			if err != nil {
 				log.Printf("创建文件夹失败: %s，将使用当前目录: %v", part, err)
 			} else {
@@ -142,7 +142,7 @@ func (b *Bot) saveFilesTo123(msg *tgbotapi.Message, commonPath string, files []F
 				rapidResp, err = uploadClient.UploadSha1Reuse(ctx, map[string]any{
 					"sha1":         etag,
 					"size":         size,
-					"filename":     fileName,
+					"filename":     pan123.EscapeFileName(fileName),
 					"parentFileId": parentID,
 					"duplicate":    1,
 				})
@@ -374,6 +374,9 @@ func mkdirWithRetry(ctx context.Context, client *pan123.Client, part string, par
 		retryCount--
 		if err == nil && resp != nil {
 			log.Printf("创建文件夹 %s 失败 (剩余重试: %d): %s", part, retryCount, resp.MessageString())
+			if strings.Contains(resp.MessageString(), "不能包含") || strings.Contains(resp.MessageString(), "小于256") {
+				break
+			}
 		} else if err != nil {
 			log.Printf("创建文件夹 %s 失败 (剩余重试: %d): %v", part, retryCount, err)
 		}
