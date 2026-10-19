@@ -23,7 +23,7 @@ type FileEntry struct {
 
 var (
 	reTarget123 = regexp.MustCompile(`(?i)https?://(?:[^/\s"'<>]*\.)?(?:123pan|123865|123684)\.[^/\s"'<>]+(?:/s/|/123pan/)[\w-]+(?:\?pwd=\w+)?`)
-	reTarget115 = regexp.MustCompile(`(?i)https?://.*?115cdn?\.[^/]+/s/[\w-]+(?:\?(?:password|pwd)=\w+)?`)
+	reTarget115 = regexp.MustCompile(`(?i)https?://(?:[^/\s"'<>]*\.)?(?:115|115cdn|anxia)\.com/s/[\w-]+(?:\?(?:password|pwd)=\w+)?`)
 	reKuakeLink = regexp.MustCompile(`(?i)https?://pan\.quark\.cn/s/([\w-]+)(?:[#?].*)?`)
 	reKuakePwd  = regexp.MustCompile(`[?&]pwd=(\w+)`)
 	rePwdText   = regexp.MustCompile(`(?i)提取码[：:]?\s*(\w+)`)
