@@ -143,7 +143,7 @@ func (b *Bot) saveFilesTo123(msg *tgbotapi.Message, commonPath string, files []F
 					"sha1":         etag,
 					"size":         size,
 					"filename":     fileName,
-					"parentFileID": parentID,
+					"parentFileId": parentID,
 					"duplicate":    1,
 				})
 			} else {
