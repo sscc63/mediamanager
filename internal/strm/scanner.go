@@ -31,6 +31,7 @@ type StrmInfo struct {
 	Name      string
 	MD5       string
 	S3KeyFlag string
+	FileID    int64
 }
 
 // StrmGroup 按 (类型, 标题, 年份) 分组的 STRM 资源（/delete 候选）。
@@ -111,6 +112,11 @@ func ReadURL(strmPath string) StrmInfo {
 	info.Name = q.Get("name")
 	info.MD5 = q.Get("md5")
 	info.S3KeyFlag = q.Get("s3_key_flag")
+	if v := q.Get("file_id"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			info.FileID = n
+		}
+	}
 	return info
 }
 
@@ -143,7 +149,7 @@ func RewriteStrmURLs(roots []string, serverAddress, apiKey string, concurrency i
 				if s3KeyFlag == "" {
 					s3KeyFlag = info.MD5
 				}
-				newURL := BuildRedirectURL(serverAddress, apiKey, info.Name, info.Size, info.MD5, s3KeyFlag)
+				newURL := BuildRedirectURL(serverAddress, apiKey, info.Name, info.Size, info.MD5, s3KeyFlag, info.FileID)
 				if err := os.WriteFile(p, []byte(newURL), 0o644); err != nil {
 					resCh <- result{p, false, err.Error()}
 					continue

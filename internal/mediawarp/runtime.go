@@ -607,6 +607,10 @@ func readStream(rc io.ReadCloser) {
 		if strings.Contains(line, "【INFO】") || strings.Contains(line, "[INFO]") {
 			continue
 		}
+		// 播放器播放前会并发 HEAD 探测，等不到 Emby 响应就撤，属正常噪音，不落日志。
+		if strings.Contains(line, "proxy error: context canceled") {
+			continue
+		}
 		log.Printf("[MediaWarp] %s", line)
 	}
 }

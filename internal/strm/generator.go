@@ -91,6 +91,7 @@ func (h *FullSyncStrmHelper) writeStrm(newFilePath string, raw *pan123.FileInfo)
 		raw.Size,
 		raw.Etag,
 		s3KeyFlag,
+		raw.FileID,
 	)
 	if err := os.WriteFile(newFilePath, []byte(strmURL), 0o644); err != nil {
 		log.Printf("【全量STRM生成】写入 STRM 文件失败 %s: %v", newFilePath, err)
@@ -393,7 +394,7 @@ func (g *TransferLinkedStrmGenerator) GenerateByPaths(ctx context.Context, netdi
 				}
 				strmURL := BuildRedirectURL(
 					g.serverAddress, g.apiKey,
-					raw.FileName, raw.Size, raw.Etag, s3KeyFlag,
+					raw.FileName, raw.Size, raw.Etag, s3KeyFlag, raw.FileID,
 				)
 				if err := os.WriteFile(newFilePath, []byte(strmURL), 0o644); err != nil {
 					log.Printf("【监控整理STRM生成】写入 %s 失败: %v", newFilePath, err)

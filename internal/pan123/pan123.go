@@ -39,24 +39,19 @@ type Client struct {
 	mu   sync.Mutex
 	http *httpx.Client
 
-	// 进程级请求节流：所有请求统一在此限速，从源头避免触发 123 风控（code=100011"请勿频繁操作"）。
-	throttleMu   sync.Mutex
-	lastReqAt    time.Time
-	minReqGap    time.Duration
-
 	uidMu    sync.Mutex
 	uidCache map[string]int64 // shareKey → 上传者 UID（share.123pan.com 三级域名）
 }
 
 // New 用已有 token 创建客户端。
 func New(token string) *Client {
-	return &Client{Token: token, http: httpx.New(30 * time.Second), minReqGap: defaultMinReqGap}
+	return &Client{Token: token, http: httpx.New(30 * time.Second)}
 }
 
 // NewWithSecret 用手机号+密码（web 登录）或 client_id+client_secret（开放平台）创建客户端并获取 token。
 // 优先使用 web 登录（手机号+密码），若凭证长度 >= 32 且为 hex 格式则使用开放平台登录。
 func NewWithSecret(clientID, clientSecret string) (*Client, error) {
-	c := &Client{http: httpx.New(30 * time.Second), minReqGap: defaultMinReqGap}
+	c := &Client{http: httpx.New(30 * time.Second)}
 	// 判断是否为开放平台凭据（client_id >= 32 位 hex 字符串）
 	if len(clientID) >= 32 && isHex(clientID) && len(clientSecret) >= 32 && isHex(clientSecret) {
 		c.ClientID = clientID
@@ -219,35 +214,8 @@ func (c *Client) LoginToken(ctx context.Context) error {
 
 // ---------- 通用请求 ----------
 
-// defaultMinReqGap 进程级最小请求间隔。123 风控（code=100011）在低频限速下即消失。
-// ponytail: 固定 1s 即可满足全量扫描/联动的并发量级；若末尾并发仍偏大再调大可配置。
-const defaultMinReqGap = time.Second
-
-// throttle 保证任意时刻距上次实际请求至少 minReqGap，超出则等待。
-func (c *Client) throttle(ctx context.Context) {
-	if c.minReqGap <= 0 {
-		return
-	}
-	for {
-		c.throttleMu.Lock()
-		wait := c.minReqGap - time.Since(c.lastReqAt)
-		if wait <= 0 {
-			c.lastReqAt = time.Now()
-			c.throttleMu.Unlock()
-			return
-		}
-		c.throttleMu.Unlock()
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(wait):
-		}
-	}
-}
-
 // req 发起请求，URL 为完整路径。自动带 Authorization: Bearer <token>。
 func (c *Client) req(ctx context.Context, method, url string, headers map[string]string, params map[string]string, body any) (*Response, error) {
-	c.throttle(ctx) // 进程级限速，从源头避免触发 123 风控
 	h := map[string]string{
 		"platform":    "open_platform",
 		"app-version": "3",

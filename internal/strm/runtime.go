@@ -531,8 +531,8 @@ func notifyEmbyNew(paths []string) {
 }
 
 // GetRedirect 302 跳转。
-func (r *StrmRuntime) GetRedirect(ctx context.Context, name string, size int64, md5, s3KeyFlag, userAgent string) (string, error) {
-	return GetRedirectURL(ctx, r.client, name, size, md5, s3KeyFlag, userAgent)
+func (r *StrmRuntime) GetRedirect(ctx context.Context, name string, size int64, md5, s3KeyFlag string, fileID int64, userAgent string) (string, error) {
+	return GetRedirectURL(ctx, r.client, name, size, md5, s3KeyFlag, fileID, userAgent)
 }
 
 // OnTransferCompleted 整理完成后联动生成 STRM。

@@ -203,7 +203,7 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	apikey := q.Get("apikey")
 	if !rt.CheckAPIKey(apikey) {
-		log.Printf("【302】apikey 无效 %s", r.RemoteAddr)
+		log.Printf("【302直链】apikey 无效 %s", r.RemoteAddr)
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": "apikey 无效"})
 		return
 	}
@@ -213,10 +213,22 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 			size = n
 		}
 	}
-	url, err := rt.GetRedirect(context.Background(), q.Get("name"), size, q.Get("md5"), q.Get("s3_key_flag"), r.Header.Get("User-Agent"))
+	// file_id 由 STRM 生成时写入；为 0 表示该文件不在本账号网盘，取链前需秒传补一条。
+	fileID := int64(0)
+	if v := q.Get("file_id"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			fileID = n
+		}
+	}
+	url, err := rt.GetRedirect(context.Background(), q.Get("name"), size, q.Get("md5"), q.Get("s3_key_flag"), fileID, r.Header.Get("User-Agent"))
 	if err != nil {
-		log.Printf("【302】%s 失败: %v", q.Get("name"), err)
+		log.Printf("【302直链】%s 获取失败: %v", q.Get("name"), err)
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	if url == "" {
+		log.Printf("【302直链】%s 获取失败: 下载地址为空", q.Get("name"))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "获取下载链接失败"})
 		return
 	}
 	http.Redirect(w, r, url, http.StatusFound)

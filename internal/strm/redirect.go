@@ -15,7 +15,7 @@ import (
 )
 
 // 302 缓存：key=(name,size,md5,s3KeyFlag) -> (url, timestamp)
-// 有界 LRU 缓存，TTL 2 分钟，最多 1000 条。
+// 有界 LRU 缓存，TTL 12 小时，最多 1000 条。
 type redirectCacheEntry struct {
 	url       string
 	timestamp time.Time
@@ -28,7 +28,8 @@ var (
 )
 
 const (
-	redirectCacheTTL     = 2 * time.Minute
+	// 123 直链有效期 24 小时，缓存 12 小时留一半余量；直链签发后与文件解耦，删文件也不失效。
+	redirectCacheTTL     = 12 * time.Hour
 	redirectCacheMaxSize = 1000
 )
 
@@ -88,15 +89,17 @@ func removeOrder(key string) {
 }
 
 // BuildRedirectURL 构造 STRM 文件内容（302 跳转 URL）。
-func BuildRedirectURL(serverAddress, apiKey, name string, size int64, etag, s3KeyFlag string) string {
+// fileID 是文件在本账号网盘里的真实 ID，播放时可直接取链，省掉秒传。
+func BuildRedirectURL(serverAddress, apiKey, name string, size int64, etag, s3KeyFlag string, fileID int64) string {
 	serverAddress = strings.TrimRight(serverAddress, "/")
-	return fmt.Sprintf("%s/api/strm/redirect?apikey=%s&name=%s&size=%d&md5=%s&s3_key_flag=%s",
+	return fmt.Sprintf("%s/api/strm/redirect?apikey=%s&name=%s&size=%d&md5=%s&s3_key_flag=%s&file_id=%d",
 		serverAddress,
 		url.QueryEscape(apiKey),
 		url.QueryEscape(name),
 		size,
 		url.QueryEscape(etag),
 		url.QueryEscape(s3KeyFlag),
+		fileID,
 	)
 }
 
@@ -126,24 +129,36 @@ func ensureFileID(ctx context.Context, client *pan123.Client, size int64, md5 st
 }
 
 // GetRedirectURL 获取 302 跳转目标地址（严格模式：s3_key_flag 必须非空）。
-func GetRedirectURL(ctx context.Context, client *pan123.Client, name string, size int64, md5, s3KeyFlag, userAgent string) (string, error) {
+// fileID 由 STRM 传入；为 0 说明该文件不在本账号网盘（分享来源），需先秒传补一条。
+func GetRedirectURL(ctx context.Context, client *pan123.Client, name string, size int64, md5, s3KeyFlag string, fileID int64, userAgent string) (string, error) {
 	if client == nil {
 		return "", fmt.Errorf("123 客户端未初始化（token 无效或网络故障），无法获取下载链接")
 	}
-	if s3KeyFlag == "" || len(md5) < 8 {
-		return "", fmt.Errorf("STRM 参数缺失（s3_key_flag/md5）")
+	if s3KeyFlag == "" {
+		return "", fmt.Errorf("缺少 s3_key_flag 参数，无法获取下载链接")
 	}
 	key := redirectCacheKey(name, size, md5, s3KeyFlag)
 	if url, ok := redirectCacheGet(key); ok {
 		return url, nil
 	}
 
-	// 秒传拿真实 FileID；直链签发后与文件解耦，取完即可删（失败也无妨：同名会被下次覆盖）。
-	fileID, err := ensureFileID(ctx, client, size, md5)
-	if err != nil {
-		return "", err
+	if fileID == 0 {
+		id, err := ensureFileID(ctx, client, size, md5)
+		if err != nil {
+			return "", err
+		}
+		// 直链签发后与文件解耦，取完即删；删失败重试一次，避免根目录留下占容量的副本。
+		defer func() {
+			go func() {
+				ctx := context.Background()
+				if ok, err := client.TrashFile(ctx, id); err != nil || !ok {
+					time.Sleep(time.Second)
+					_, _ = client.TrashFile(ctx, id)
+				}
+			}()
+		}()
+		fileID = id
 	}
-	defer func() { go func() { _, _ = client.TrashFile(context.Background(), fileID) }() }()
 
 	payload := map[string]any{
 		"S3KeyFlag": s3KeyFlag,
@@ -174,7 +189,7 @@ func GetRedirectURL(ctx context.Context, client *pan123.Client, name string, siz
 	}
 
 	redirectCacheSet(key, data.DownloadURL)
-	log.Printf("【302】%s 成功", name)
+	log.Printf("【302直链】%s 获取成功", name)
 	return data.DownloadURL, nil
 }
 
