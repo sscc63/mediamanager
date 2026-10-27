@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"mmbot/internal/pan123"
@@ -101,47 +100,29 @@ func BuildRedirectURL(serverAddress, apiKey, name string, size int64, etag, s3Ke
 	)
 }
 
-// dlAttempt 一次取链尝试。headers 覆盖 pan123 请求的默认头；passUA 为 true 时把播放器 UA 透传给 123。
-// fileID/noFileID 控制 payload 里的 FileID 字段：历史经验是 FileID=0 取不到、FileID=1 能取到，
-// 说明该字段是「语义开关」而非真实文件 id，故这里按取值逐档试。
-type dlAttempt struct {
-	name     string
-	headers  map[string]string
-	passUA   bool
-	fileID   any
-	noFileID bool
-}
-
-// redirectAttempts 取链尝试序列。
-// 2026-10-27 12:16 起 123 收紧校验，原「FileID=1 + platform=android + 播放器 UA」组合被统一回
-// 5066「文件不存在」（新旧文件、网盘有无文件均复现）。故按「最接近原行为」到「最标准」顺序逐个降级：
-// 先试 FileID 的三种形态（1 / 不传 / 0），再叠加 Referer。任一组合成功即返回。
-// 日志会记录每个组合的真实 code/msg，用于定位 123 到底认哪一套。
-var redirectAttempts = []dlAttempt{
-	{name: "legacy(FileID=1+android+播放器UA)", headers: map[string]string{"platform": "android"}, passUA: true, fileID: 1},
-	{name: "noFileID(open_platform)", headers: map[string]string{"platform": "open_platform"}, noFileID: true},
-	{name: "FileID=1(open_platform)", headers: map[string]string{"platform": "open_platform"}, fileID: 1},
-	{name: "noFileID+referer", headers: map[string]string{"platform": "open_platform", "Referer": "https://www.123pan.com/"}, noFileID: true},
-	{name: "FileID=1+referer", headers: map[string]string{"platform": "open_platform", "Referer": "https://www.123pan.com/"}, fileID: 1},
-	{name: "FileID=0(open_platform)", headers: map[string]string{"platform": "open_platform"}, fileID: 0},
-}
-
-// goodAttempt 记住上次成功的组合下标+1（0 表示未知），后续优先试它，避免每次播放都逐个重试。
-var goodAttempt atomic.Int32
-
-// attemptOrder 返回尝试顺序：上次成功的组合优先，其余按定义顺序。
-func attemptOrder() []int {
-	g := int(goodAttempt.Load()) - 1
-	order := make([]int, 0, len(redirectAttempts))
-	if g >= 0 && g < len(redirectAttempts) {
-		order = append(order, g)
+// ensureFileID 用 MD5 秒传把文件引到网盘根目录，返回真实 FileID。
+// 注意：真实 id 在 data.Info.FileId，顶层 data.FileId 是上传会话 id，用它取链会 5066。
+func ensureFileID(ctx context.Context, client *pan123.Client, size int64, md5 string) (int64, error) {
+	// 临时名带 md5 前 8 位：不同影片互不覆盖，同一影片重复播则替换同名。
+	resp, err := client.UploadRequest(ctx, map[string]any{
+		"etag": md5, "fileName": "_strm_" + md5[:8] + ".mkv",
+		"size": size, "parentFileId": 0, "duplicate": 2,
+	})
+	if err != nil {
+		return 0, err
 	}
-	for i := range redirectAttempts {
-		if i != g {
-			order = append(order, i)
-		}
+	var data struct {
+		Info struct {
+			FileID int64 `json:"FileId"`
+		} `json:"Info"`
 	}
-	return order
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return 0, err
+	}
+	if data.Info.FileID == 0 {
+		return 0, fmt.Errorf("秒传失败 code=%d msg=%s", resp.Code, resp.MessageString())
+	}
+	return data.Info.FileID, nil
 }
 
 // GetRedirectURL 获取 302 跳转目标地址（严格模式：s3_key_flag 必须非空）。
@@ -149,69 +130,52 @@ func GetRedirectURL(ctx context.Context, client *pan123.Client, name string, siz
 	if client == nil {
 		return "", fmt.Errorf("123 客户端未初始化（token 无效或网络故障），无法获取下载链接")
 	}
-	if s3KeyFlag == "" {
-		return "", fmt.Errorf("缺少 s3_key_flag 参数，无法获取下载链接")
+	if s3KeyFlag == "" || len(md5) < 8 {
+		return "", fmt.Errorf("STRM 参数缺失（s3_key_flag/md5）")
 	}
 	key := redirectCacheKey(name, size, md5, s3KeyFlag)
 	if url, ok := redirectCacheGet(key); ok {
 		return url, nil
 	}
 
-	// 逐个组合尝试：单一组合可能被 123 拒绝，任一成功即缓存并返回。
-	lastCode, lastMsg := 0, ""
-	var lastErr error
-	for _, idx := range attemptOrder() {
-		att := redirectAttempts[idx]
-		// 每个组合独立构造 payload：FileID 的取值本身就是被试探的变量，不能共用同一个 map。
-		payload := map[string]any{
-			"S3KeyFlag": s3KeyFlag,
-			"FileName":  name,
-			"Etag":      md5,
-			"Size":      size,
-		}
-		if !att.noFileID && att.fileID != nil {
-			payload["FileID"] = att.fileID
-		}
-		headers := make(map[string]string, len(att.headers)+1)
-		for k, v := range att.headers {
-			headers[k] = v
-		}
-		// legacy 组合复现原行为：透传播放器 UA。用小写 key，避免与 req() 默认的 user-agent 重复导致取值随机。
-		if att.passUA && userAgent != "" {
-			headers["user-agent"] = userAgent
-		}
-		resp, err := client.DownloadInfoWithPayload(ctx, payload, headers)
-		if err != nil {
-			lastErr = err
-			log.Printf("【302跳转服务】取链尝试[%s]出错 name=%s: %v", att.name, name, err)
-			continue
-		}
-		if !resp.IsSuccess() {
-			lastCode, lastMsg = resp.Code, resp.MessageString()
-			log.Printf("【302跳转服务】取链尝试[%s]被拒 name=%s: code=%d msg=%s", att.name, name, resp.Code, resp.MessageString())
-			continue
-		}
-		var data struct {
-			DownloadURL string `json:"DownloadUrl"`
-		}
-		if err := json.Unmarshal(resp.Data, &data); err != nil {
-			log.Printf("【302跳转服务】取链尝试[%s]响应解析失败 name=%s: %v", att.name, name, err)
-			continue
-		}
-		if data.DownloadURL == "" {
-			log.Printf("【302跳转服务】取链尝试[%s]返回成功但 DownloadUrl 为空 name=%s", att.name, name)
-			continue
-		}
-		goodAttempt.Store(int32(idx + 1))
-		redirectCacheSet(key, data.DownloadURL)
-		log.Printf("【302跳转服务】获取 123 下载地址成功（组合 %s）: %s", att.name, data.DownloadURL)
-		return data.DownloadURL, nil
+	// 秒传拿真实 FileID；直链签发后与文件解耦，取完即可删（失败也无妨：同名会被下次覆盖）。
+	fileID, err := ensureFileID(ctx, client, size, md5)
+	if err != nil {
+		return "", err
+	}
+	defer func() { go func() { _, _ = client.TrashFile(context.Background(), fileID) }() }()
+
+	payload := map[string]any{
+		"S3KeyFlag": s3KeyFlag,
+		"FileName":  name,
+		"Etag":      md5,
+		"Size":      size,
+		"FileID":    fileID,
+	}
+	headers := map[string]string{}
+	if userAgent != "" {
+		headers["User-Agent"] = userAgent
+	}
+	resp, err := client.DownloadInfoWithPayload(ctx, payload, headers)
+	if err != nil {
+		return "", fmt.Errorf("获取 123 下载地址失败: %v", err)
+	}
+	if !resp.IsSuccess() {
+		return "", fmt.Errorf("123 返回错误 code=%d msg=%s", resp.Code, resp.MessageString())
+	}
+	var data struct {
+		DownloadURL string `json:"DownloadUrl"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return "", fmt.Errorf("解析下载地址失败: %v", err)
+	}
+	if data.DownloadURL == "" {
+		return "", fmt.Errorf("123 返回的 DownloadUrl 为空")
 	}
 
-	if lastCode == 0 && lastErr != nil {
-		return "", fmt.Errorf("获取 123 下载地址失败: %v", lastErr)
-	}
-	return "", fmt.Errorf("123 返回错误 code=%d msg=%s（已尝试 %d 种 FileID/请求头组合）", lastCode, lastMsg, len(redirectAttempts))
+	redirectCacheSet(key, data.DownloadURL)
+	log.Printf("【302】%s 成功", name)
+	return data.DownloadURL, nil
 }
 
 // CheckResponse 检查 123 响应。

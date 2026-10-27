@@ -203,7 +203,7 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	apikey := q.Get("apikey")
 	if !rt.CheckAPIKey(apikey) {
-		log.Printf("【302跳转服务】拒绝请求：apikey 无效（remote=%s）", r.RemoteAddr)
+		log.Printf("【302】apikey 无效 %s", r.RemoteAddr)
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": "apikey 无效"})
 		return
 	}
@@ -213,19 +213,10 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 			size = n
 		}
 	}
-	// 每次请求都留痕：故障时若日志里连"收到请求"都没有，说明问题在 MediaWarp/客户端侧，
-	// 而不是应用侧取直链失败（失败路径原本完全静默，无法定位）。
-	log.Printf("【302跳转服务】收到请求 name=%s size=%d md5=%s s3_key_flag=%s ua=%s",
-		q.Get("name"), size, q.Get("md5"), q.Get("s3_key_flag"), r.Header.Get("User-Agent"))
 	url, err := rt.GetRedirect(context.Background(), q.Get("name"), size, q.Get("md5"), q.Get("s3_key_flag"), r.Header.Get("User-Agent"))
 	if err != nil {
-		log.Printf("【302跳转服务】获取下载地址失败 name=%s: %v", q.Get("name"), err)
+		log.Printf("【302】%s 失败: %v", q.Get("name"), err)
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
-		return
-	}
-	if url == "" {
-		log.Printf("【302跳转服务】获取下载地址为空 name=%s", q.Get("name"))
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "获取下载链接失败"})
 		return
 	}
 	http.Redirect(w, r, url, http.StatusFound)
